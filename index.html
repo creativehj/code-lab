@@ -249,7 +249,8 @@ details.how summary{cursor:pointer;color:var(--ink)}
           <span class="note" id="copyMsg" aria-live="polite"></span>
         </div>
         <textarea id="handoff" readonly hidden aria-label="개발자에게 넘길 메모" style="min-height:160px"></textarea>
-        <p class="note" id="storeNote">표시, 메모, 넣은 코드는 이 기기의 이 브라우저에만 저장됩니다. 다른 기기에서는 보이지 않고, 브라우저 데이터를 지우면 사라집니다.</p>
+        <label class="chk" for="persist"><input type="checkbox" id="persist"><span>이 기기에 테스트 저장하기</span></label>
+        <p class="note" id="storeNote"></p>
       </section>
     </div>
   </div>
@@ -525,14 +526,11 @@ function workerMain(){
   ];
   function mk(name,mode){ return {id:uid(),name:name,mode:mode||'web',code:'',files:[],sel:'',entry:'',args:'',stdin:'',memo:'',custom:[],items:{}}; }
 
-  var S={v:2,tests:[],cur:null,net:false,size:'390',wide:false};
-  try{ var raw=localStorage.getItem(KEY); if(raw) S=JSON.parse(raw); else{
-    var old=localStorage.getItem(OLD);
-    if(old){ var o=JSON.parse(old); (o.tests||[]).forEach(function(t){ var n=mk(t.name||'이전 테스트','web'); n.code=t.code||''; n.memo=t.memo||''; n.custom=t.custom||[]; S.tests.push(n); }); S.cur=S.tests[0]&&S.tests[0].id; S.net=!!o.net; }
-  } }catch(e){}
-  if(!S.tests||!S.tests.length){ var first=mk('예시: 할 일 목록','web'); first.code=SAMPLE_WEB; S.tests=[first]; S.cur=first.id; }
+  var S={v:2,tests:[],cur:null,net:false,size:'390',wide:false,persist:false};
+  try{ var raw=localStorage.getItem(KEY); if(raw){ var o=JSON.parse(raw); S.net=!!o.net; S.size=o.size||'390'; S.wide=!!o.wide; S.persist=o.persist===true; if(S.persist&&o.tests&&o.tests.length){ S.tests=o.tests; S.cur=o.cur; } else if(o.tests){ try{ localStorage.setItem(KEY,JSON.stringify({v:2,persist:false,net:S.net,size:S.size,wide:S.wide})); }catch(e){} } } try{ localStorage.removeItem(OLD); }catch(e){} }catch(e){}
+  if(!S.tests||!S.tests.length){ var first=mk('새 테스트','web'); S.tests=[first]; S.cur=first.id; }
   S.v=2; if(!S.size) S.size='390';
-  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){ $('storeNote').textContent='이 브라우저에서는 저장이 막혔거나 용량이 가득 찼어요. 페이지를 닫으면 입력한 내용이 사라질 수 있어요.'; } }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S.persist?S:{v:2,persist:false,net:S.net,size:S.size,wide:S.wide})); }catch(e){ $('storeNote').textContent='이 브라우저에서는 저장이 막혔거나 용량이 가득 찼어요. 페이지를 닫으면 입력한 내용이 사라질 수 있어요.'; } }
   function cur(){ for(var i=0;i<S.tests.length;i++){ if(S.tests[i].id===S.cur) return S.tests[i]; } S.cur=S.tests[0].id; return S.tests[0]; }
 
   /* ---------- 실행 상태 (저장 안 함) ---------- */
@@ -1040,6 +1038,9 @@ function workerMain(){
   $('run').addEventListener('click',runWeb);
   $('pyRun').addEventListener('click',runPy);
   $('sample').addEventListener('click',function(){ var t=mk('예시: 할 일 목록','web'); t.code=SAMPLE_WEB; S.tests.push(t); switchTo(t.id); });
+  function storeText(){ $('storeNote').textContent=S.persist?'넣은 코드, 파일, 표시, 메모가 이 기기의 이 브라우저에 저장됩니다. 다른 기기에서는 보이지 않고, 브라우저 데이터를 지우면 사라집니다.':'지금은 저장하지 않아요. 페이지를 닫거나 새로고침하면 넣은 코드와 파일, 표시, 메모가 모두 사라져요. 필요하면 위 체크를 켜세요.'; }
+  $('persist').checked=!!S.persist; storeText();
+  $('persist').addEventListener('change',function(){ S.persist=$('persist').checked; storeText(); save(); });
   $('net').checked=!!S.net;
   $('net').addEventListener('change',function(){ S.net=$('net').checked; save(); runWeb(); });
 
