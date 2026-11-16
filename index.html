@@ -160,6 +160,10 @@ details.how summary{cursor:pointer;color:var(--ink)}
           <button type="button" class="tog dev" data-w="390" aria-pressed="true">폰 390</button>
           <button type="button" class="tog dev" data-w="768" aria-pressed="false">태블릿 768</button>
           <button type="button" class="tog dev" data-w="1280" aria-pressed="false">데스크톱 1280</button>
+          <button type="button" class="tog dev" data-w="flip" aria-pressed="false">Z 플립 펼침</button>
+          <button type="button" class="tog dev" data-w="flex" aria-pressed="false">Z 플립 플렉스</button>
+          <button type="button" class="tog dev" data-w="cover" aria-pressed="false">Z 플립 커버</button>
+          <button type="button" class="tog" id="rotBtn" aria-pressed="false">가로로 돌리기</button>
           <button type="button" class="tog" id="wideBtn" aria-pressed="false">넓게 보기</button>
         </div>
         <div class="seg" id="pyTools" hidden>
@@ -643,10 +647,10 @@ function workerMain(){
   function mk(name,mode){ return {id:uid(),name:name,mode:mode||'web',code:'',files:[],sel:'',entry:'',args:'',stdin:'',memo:'',custom:[],items:{}}; }
 
   var S={v:2,tests:[],cur:null,net:false,size:'390',wide:false,persist:false};
-  try{ var raw=localStorage.getItem(KEY); if(raw){ var o=JSON.parse(raw); S.net=!!o.net; S.size=o.size||'390'; S.wide=!!o.wide; S.persist=o.persist===true; if(S.persist&&o.tests&&o.tests.length){ S.tests=o.tests; S.cur=o.cur; } else if(o.tests){ try{ localStorage.setItem(KEY,JSON.stringify({v:2,persist:false,net:S.net,size:S.size,wide:S.wide})); }catch(e){} } } try{ localStorage.removeItem(OLD); }catch(e){} }catch(e){}
+  try{ var raw=localStorage.getItem(KEY); if(raw){ var o=JSON.parse(raw); S.net=!!o.net; S.size=o.size||'390'; S.wide=!!o.wide; S.rot=!!o.rot; S.persist=o.persist===true; if(S.persist&&o.tests&&o.tests.length){ S.tests=o.tests; S.cur=o.cur; } else if(o.tests){ try{ localStorage.setItem(KEY,JSON.stringify({v:2,persist:false,net:S.net,size:S.size,wide:S.wide,rot:S.rot})); }catch(e){} } } try{ localStorage.removeItem(OLD); }catch(e){} }catch(e){}
   if(!S.tests||!S.tests.length){ var first=mk('새 테스트','web'); S.tests=[first]; S.cur=first.id; }
   S.v=2; if(!S.size) S.size='390';
-  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S.persist?S:{v:2,persist:false,net:S.net,size:S.size,wide:S.wide})); }catch(e){ $('storeNote').textContent='이 브라우저에서는 저장이 막혔거나 용량이 가득 찼어요. 페이지를 닫으면 입력한 내용이 사라질 수 있어요.'; } }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S.persist?S:{v:2,persist:false,net:S.net,size:S.size,wide:S.wide,rot:S.rot})); }catch(e){ $('storeNote').textContent='이 브라우저에서는 저장이 막혔거나 용량이 가득 찼어요. 페이지를 닫으면 입력한 내용이 사라질 수 있어요.'; } }
   function cur(){ for(var i=0;i<S.tests.length;i++){ if(S.tests[i].id===S.cur) return S.tests[i]; } S.cur=S.tests[0].id; return S.tests[0]; }
 
   /* ---------- 실행 상태 (저장 안 함) ---------- */
@@ -655,20 +659,25 @@ function workerMain(){
   var stage=$('stage'), fbox=$('fbox');
 
   /* ---------- 화면 크기 ---------- */
-  var HEIGHTS={'390':780,'768':1024,'1280':800};
+  var PRESETS={'390':{w:390,h:780,n:'폰'},'768':{w:768,h:1024,n:'태블릿'},'1280':{w:1280,h:800,n:'데스크톱'},
+    'flip':{w:360,h:840,n:'Z 플립 펼침 (6.9인치)',note:'삼성 공식 해상도 1080×2520 기준(배율 3)'},
+    'flex':{w:360,h:420,n:'Z 플립 플렉스 모드 (접어 세운 윗 화면)',note:'펼친 화면의 위쪽 절반을 쓴다고 보고 어림한 크기'},
+    'cover':{w:316,h:349,n:'Z 플립 커버 (4.1인치)',note:'삼성 공식 해상도 948×1048을 배율 3으로 나눈 어림값, 실제 기기 값은 확인되지 않았어요'}};
   function layoutStage(){
-    var W=+S.size, H=HEIGHTS[S.size]||800;
+    if(!PRESETS[S.size]) S.size='390';
+    var PR=PRESETS[S.size], W=S.rot?PR.h:PR.w, H=S.rot?PR.w:PR.h;
     var wrap=$('webStage'), cs=getComputedStyle(wrap);
     var avail=Math.max(120,wrap.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight));
     var sc=Math.min(1,avail/W);
     stage.style.width=W+'px'; stage.style.height=H+'px'; stage.style.transform='scale('+sc+')';
     fbox.style.width=Math.round(W*sc)+'px'; fbox.style.height=Math.round(H*sc)+'px';
-    $('sizeNote').textContent='실제 화면 폭 '+W+'px · '+(sc<1?'칸에 맞춰 '+Math.round(sc*100)+'%로 줄여서 표시':'100% 크기로 표시')+(sc<0.7&&!S.wide?' · "넓게 보기"를 켜면 더 크게 볼 수 있어요':'');
+    $('sizeNote').textContent=PR.n+(S.rot?' 가로':'')+' · 실제 크기 '+W+'×'+H+'px · '+(sc<1?'칸에 맞춰 '+Math.round(sc*100)+'%로 줄여서 표시':'100% 크기로 표시')+(sc<0.7&&!S.wide?' · "넓게 보기"를 켜면 더 크게 볼 수 있어요':'')+(PR.note?' · '+PR.note:'');
     document.querySelectorAll('button.dev').forEach(function(b){ b.setAttribute('aria-pressed',b.getAttribute('data-w')===S.size?'true':'false'); });
-    $('wideBtn').setAttribute('aria-pressed',S.wide?'true':'false');
+    $('wideBtn').setAttribute('aria-pressed',S.wide?'true':'false'); $('rotBtn').setAttribute('aria-pressed',S.rot?'true':'false');
     $('grid').classList.toggle('wide',!!S.wide);
   }
   document.querySelectorAll('button.dev').forEach(function(b){ b.addEventListener('click',function(){ S.size=b.getAttribute('data-w'); save(); layoutStage(); setTimeout(function(){ cmd({__labcmd:'static'}); },350); }); });
+  $('rotBtn').addEventListener('click',function(){ S.rot=!S.rot; save(); layoutStage(); setTimeout(function(){ cmd({__labcmd:'static'}); },350); });
   $('wideBtn').addEventListener('click',function(){ S.wide=!S.wide; save(); layoutStage(); setTimeout(layoutStage,60); setTimeout(function(){ cmd({__labcmd:'static'}); },350); });
   if(window.ResizeObserver){ new ResizeObserver(function(){ if(cur().mode==='web') layoutStage(); }).observe($('webStage')); }
   window.addEventListener('resize',function(){ if(cur().mode==='web') layoutStage(); });
