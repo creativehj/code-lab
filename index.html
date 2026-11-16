@@ -13,12 +13,14 @@
 <meta name="apple-mobile-web-app-title" content="코드 랩">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
 <style>
-/* Layout: 왼쪽에 실행 화면(고정), 오른쪽에 코드 입력, 오류, 체크리스트. 좁은 화면에서는 위아래로 쌓음. */
+/* Layout: 왼쪽에 실행 화면(고정), 오른쪽에 코드 입력 · 실행 기록 · 점검 목록. '넓게 보기'를 켜면 실행 화면이 전체 폭을 차지하고 나머지는 아래로 내려감. */
 :root{
   color-scheme:light;
   --bg:#F4F6F7; --surface:#FFFFFF; --ink:#1B2A2F; --muted:#51646B; --line:#D5DDE0;
   --accent:#0E6B5C; --accent-ink:#FFFFFF;
-  --ok-bg:#DCEFE4; --ok-fg:#14532D; --bad-bg:#FBE3D6; --bad-fg:#7A2E0B; --none-bg:#E7ECEE; --none-fg:#33454C;
+  --ok-bg:#DCEFE4; --ok-fg:#14532D; --bad-bg:#FBE3D6; --bad-fg:#7A2E0B;
+  --warn-bg:#FBF0C9; --warn-fg:#6B4A00; --none-bg:#E7ECEE; --none-fg:#33454C;
+  --term-bg:#0F1A1D; --term-fg:#D8E4E7; --term-err:#FF9E80;
   --font-body:'IBM Plex Sans KR',system-ui,-apple-system,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
   --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
 }
@@ -26,16 +28,21 @@
   :root:not([data-theme="light"]){
     --bg:#11191C; --surface:#1A2428; --ink:#E6EDEF; --muted:#9FB1B8; --line:#2D3B40;
     --accent:#5CC4B0; --accent-ink:#08201B;
-    --ok-bg:#1C3A2A; --ok-fg:#A7E3BF; --bad-bg:#432617; --bad-fg:#F5C4A5; --none-bg:#263238; --none-fg:#C5D3D8;
+    --ok-bg:#1C3A2A; --ok-fg:#A7E3BF; --bad-bg:#432617; --bad-fg:#F5C4A5;
+    --warn-bg:#40370F; --warn-fg:#F2DC8B; --none-bg:#263238; --none-fg:#C5D3D8;
+    --term-bg:#0B1316; --term-fg:#D8E4E7; --term-err:#FFA98F;
     color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --bg:#11191C; --surface:#1A2428; --ink:#E6EDEF; --muted:#9FB1B8; --line:#2D3B40;
   --accent:#5CC4B0; --accent-ink:#08201B;
-  --ok-bg:#1C3A2A; --ok-fg:#A7E3BF; --bad-bg:#432617; --bad-fg:#F5C4A5; --none-bg:#263238; --none-fg:#C5D3D8;
+  --ok-bg:#1C3A2A; --ok-fg:#A7E3BF; --bad-bg:#432617; --bad-fg:#F5C4A5;
+  --warn-bg:#40370F; --warn-fg:#F2DC8B; --none-bg:#263238; --none-fg:#C5D3D8;
+  --term-bg:#0B1316; --term-fg:#D8E4E7; --term-err:#FFA98F;
   color-scheme:dark;
 }
+[hidden]{display:none!important}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.6;
@@ -46,51 +53,83 @@ h1{margin:0;font-size:28px;line-height:1.25;font-weight:600;text-wrap:balance}
 .lead{margin:4px 0 0;font-size:14px;color:var(--muted)}
 .tally{display:flex;flex-wrap:wrap;gap:8px}
 .pill{font-size:13px;font-weight:600;padding:5px 12px;border-radius:999px;white-space:nowrap}
-.pill.ok{background:var(--ok-bg);color:var(--ok-fg)}
-.pill.bad{background:var(--bad-bg);color:var(--bad-fg)}
-.pill.none{background:var(--none-bg);color:var(--none-fg)}
+.pill.ok,.b-ok{background:var(--ok-bg);color:var(--ok-fg)}
+.pill.bad,.b-bad{background:var(--bad-bg);color:var(--bad-fg)}
+.pill.warn,.b-warn{background:var(--warn-bg);color:var(--warn-fg)}
+.pill.none,.b-wait{background:var(--none-bg);color:var(--none-fg)}
 .grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:24px;align-items:start}
+.grid.wide{grid-template-columns:minmax(0,1fr)}
 @media (max-width:920px){.grid{grid-template-columns:minmax(0,1fr)}}
 .col{display:flex;flex-direction:column;gap:24px;min-width:0}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px;min-width:0}
 h2{margin:0;font-size:17px;font-weight:600}
+h3{margin:0;font-size:14px;font-weight:600;color:var(--muted);letter-spacing:.03em}
 .sub{font-size:13px;color:var(--muted);margin:0}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
 .seg{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-button,.btn{font-family:inherit;font-size:14px;cursor:pointer;min-height:40px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:inline-flex;align-items:center;justify-content:center}
+button,.btn{font-family:inherit;font-size:14px;cursor:pointer;min-height:40px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;gap:6px}
 button:hover,.btn:hover{border-color:var(--muted)}
-button[aria-pressed="true"].dev{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button[disabled]{opacity:.5;cursor:not-allowed}
+button[aria-pressed="true"].tog{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
-button.warn{border-color:var(--bad-fg);color:var(--bad-fg);font-weight:600}
-button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.btn:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+button.warnbtn{border-color:var(--bad-fg);color:var(--bad-fg);font-weight:600}
+button.small{min-height:32px;padding:0 10px;font-size:13px}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible,.btn:focus-within{outline:3px solid var(--accent);outline-offset:2px}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .stagewrap{display:flex;justify-content:center;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:hidden}
-.frame{width:100%;max-width:100%;transition:max-width .15s}
-iframe{display:block;width:100%;height:780px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.fbox{position:relative;max-width:100%}
+iframe{display:block;border:1px solid var(--line);border-radius:6px;background:#fff;transform-origin:0 0;position:absolute;left:0;top:0}
 .sticky{position:sticky;top:16px}
+.grid.wide .sticky,.sticky.off{position:static}
 @media (max-width:920px){.sticky{position:static}}
 input[type=text],textarea,select{width:100%;font-family:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:40px}
 textarea{resize:vertical}
-#code{font-family:var(--font-mono);font-size:13px;min-height:200px;line-height:1.5;white-space:pre;overflow:auto}
-#code.drag{border-color:var(--accent);border-style:dashed}
+#code,#pyCode{font-family:var(--font-mono);font-size:13px;min-height:190px;line-height:1.5;white-space:pre;overflow:auto}
+#code.drag,#pyCode.drag,.drop.drag{border-color:var(--accent);border-style:dashed}
 label.l{font-size:13px;color:var(--muted)}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .row>*{min-width:0}
-.errs{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:13px}
-.errs li{display:flex;gap:10px;align-items:baseline;background:var(--bad-bg);color:var(--bad-fg);border-radius:8px;padding:6px 10px;overflow-wrap:anywhere}
-.okline{font-size:14px;color:var(--ok-fg);background:var(--ok-bg);border-radius:8px;padding:6px 10px}
 .limits{font-size:13px;color:var(--muted);border-left:3px solid var(--line);padding-left:12px;margin:0}
-.item{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-top:1px solid var(--line)}
-.item:first-of-type{border-top:0}
-.item p{margin:0;overflow-wrap:anywhere}
+.note{font-size:13px;color:var(--muted);margin:0}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+.chk input{margin-top:5px;width:18px;height:18px;accent-color:var(--accent)}
+.modes{display:flex;gap:6px}
+.modes button{flex:1}
+/* 파이썬 */
+.pystatus{font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.term{margin:0;background:var(--term-bg);color:var(--term-fg);font-family:var(--font-mono);font-size:12.5px;line-height:1.5;border-radius:8px;padding:12px;min-height:220px;max-height:560px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.term .e{color:var(--term-err)}
+.sum{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.trow{border-top:1px solid var(--line);padding:8px 0;font-size:13px}
+.trow summary{cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.trow .tid{font-family:var(--font-mono);overflow-wrap:anywhere;min-width:0}
+.trow pre{margin:8px 0 0;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border-radius:6px;padding:8px}
+.files{display:flex;flex-direction:column;gap:2px;max-height:210px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:4px}
+.frow{display:flex;gap:6px;align-items:center}
+.frow button.pick{flex:1;justify-content:flex-start;border:0;background:transparent;font-family:var(--font-mono);font-size:12.5px;min-height:32px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.frow button.pick[aria-pressed="true"]{background:var(--none-bg);font-weight:600}
+.drop{border:1px dashed var(--line);border-radius:8px;padding:10px;font-size:13px;color:var(--muted)}
+/* 실행 기록 · 점검 목록 */
+.status{display:flex;flex-direction:column;gap:6px;border-radius:8px;padding:10px 12px;font-size:14px}
+.status b{font-weight:600}
+.evs{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font-size:13px;max-height:260px;overflow:auto}
+.evs li{display:flex;gap:8px;align-items:baseline;overflow-wrap:anywhere}
+.evs .tm{font-family:var(--font-mono);font-size:12px;color:var(--muted);flex:none}
+.evs .tg{flex:none;font-size:12px;font-weight:600;border-radius:6px;padding:0 7px}
+details.how{font-size:13px;color:var(--muted)}
+details.how summary{cursor:pointer;color:var(--ink)}
+.item{display:flex;flex-direction:column;gap:6px;padding:12px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.item .ih{display:flex;gap:10px;align-items:flex-start}
+.item .ih p{margin:0;overflow-wrap:anywhere;min-width:0}
+.badge{flex:none;font-size:12px;font-weight:600;border-radius:6px;padding:1px 8px;margin-top:2px}
+.why{margin:0;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
 .state{display:flex;flex-wrap:wrap;gap:6px}
-.state button{min-height:36px;padding:0 12px;font-size:13px}
+.state button{min-height:34px;padding:0 12px;font-size:13px}
 .state button[aria-pressed="true"][data-s="ok"]{background:var(--ok-bg);color:var(--ok-fg);border-color:var(--ok-fg);font-weight:600}
 .state button[aria-pressed="true"][data-s="bad"]{background:var(--bad-bg);color:var(--bad-fg);border-color:var(--bad-fg);font-weight:600}
 .state button[aria-pressed="true"][data-s="none"]{background:var(--none-bg);color:var(--none-fg);border-color:var(--none-fg);font-weight:600}
-.note{font-size:13px;color:var(--muted)}
-.chk{display:flex;gap:8px;align-items:flex-start;font-size:14px}
-.chk input{margin-top:5px;width:18px;height:18px;accent-color:var(--accent)}
+.empty{font-size:13px;color:var(--muted);margin:0}
 </style>
 </head>
 <body>
@@ -98,22 +137,32 @@ label.l{font-size:13px;color:var(--muted)}
   <header>
     <div>
       <h1>코드 실험실</h1>
-      <p class="lead">HTML 코드를 넣으면 바로 실행해서 눌러 보고, 오류와 확인 결과를 기록합니다.</p>
+      <p class="lead">HTML·JavaScript와 파이썬 코드를 넣으면 바로 실행해 보고, 코드에 맞춘 점검 목록과 자동 탐색 결과를 남깁니다.</p>
     </div>
     <div class="tally" id="tally" aria-live="polite"></div>
   </header>
 
-  <div class="grid">
-    <section class="card sticky" aria-labelledby="h-stage">
+  <div class="grid" id="grid">
+    <section class="card sticky" id="stageCard" aria-labelledby="h-stage">
       <div class="bar">
         <h2 id="h-stage">실행 화면</h2>
-        <div class="seg" role="group" aria-label="화면 폭">
-          <button type="button" class="dev" data-w="360px" aria-pressed="true">휴대폰 360</button>
-          <button type="button" class="dev" data-w="768px" aria-pressed="false">태블릿 768</button>
-          <button type="button" class="dev" data-w="100%" aria-pressed="false">넓게</button>
+        <div class="seg" id="webTools" role="group" aria-label="화면 크기">
+          <button type="button" class="tog dev" data-w="390" aria-pressed="true">폰 390</button>
+          <button type="button" class="tog dev" data-w="768" aria-pressed="false">태블릿 768</button>
+          <button type="button" class="tog dev" data-w="1280" aria-pressed="false">데스크톱 1280</button>
+          <button type="button" class="tog" id="wideBtn" aria-pressed="false">넓게 보기</button>
+        </div>
+        <div class="seg" id="pyTools" hidden>
+          <button type="button" id="stopBtn" class="warnbtn" disabled>중지</button>
         </div>
       </div>
-      <div class="stagewrap"><div class="frame" id="frame"><iframe id="stage" title="실행 화면" sandbox="allow-scripts allow-forms allow-modals"></iframe></div></div>
+      <p class="sub" id="sizeNote" aria-live="polite"></p>
+      <div id="webStage" class="stagewrap"><div class="fbox" id="fbox"><iframe id="stage" title="실행 화면" sandbox="allow-scripts allow-forms allow-modals"></iframe></div></div>
+      <div id="pyStage" hidden>
+        <div class="pystatus" id="pyStatus" aria-live="polite"></div>
+        <div id="pyTests"></div>
+        <pre class="term" id="pyOut" aria-label="파이썬 출력"></pre>
+      </div>
     </section>
 
     <div class="col">
@@ -126,25 +175,69 @@ label.l{font-size:13px;color:var(--muted)}
         </div>
         <label class="l" for="tname">테스트 이름</label>
         <input type="text" id="tname" autocomplete="off">
-        <label class="l" for="code">HTML 코드 (붙여넣기, 또는 파일 올리기 · 끌어다 놓기)</label>
-        <textarea id="code" spellcheck="false" placeholder="여기에 HTML 코드를 붙여 넣으세요"></textarea>
-        <div class="row">
-          <button type="button" class="primary" id="run">실행</button>
-          <label class="btn" for="file" id="fileLabel">파일 올리기<input type="file" id="file" class="vh" accept=".html,.htm,text/html"></label>
-          <button type="button" id="sample">예시 불러오기</button>
+        <div class="modes" role="group" aria-label="언어">
+          <button type="button" class="tog" id="modeWeb" aria-pressed="true">웹 (HTML · JS)</button>
+          <button type="button" class="tog" id="modePy" aria-pressed="false">파이썬</button>
         </div>
-        <label class="chk" for="net"><input type="checkbox" id="net"><span>외부 요청 허용 (기본은 막음)</span></label>
-        <p class="limits">코드는 이 브라우저 안의 격리된 화면에서만 실행됩니다. 출처를 모르는 코드는 넣지 마세요. 저장 기능(localStorage), 서버 연결, API 키가 필요한 기능은 여기서 확인할 수 없고, 한 파일로 된 HTML만 실행됩니다.</p>
+
+        <div id="webIn">
+          <label class="l" for="code">HTML 코드 (붙여넣기, 또는 파일 올리기 · 끌어다 놓기)</label>
+          <textarea id="code" spellcheck="false" placeholder="여기에 HTML 코드를 붙여 넣으세요"></textarea>
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="primary" id="run">실행</button>
+            <label class="btn" for="file" id="fileLabel">파일 올리기<input type="file" id="file" class="vh" accept=".html,.htm,.py,.zip,.txt,.json,.md" multiple></label>
+            <button type="button" id="sample">예시 불러오기</button>
+          </div>
+          <label class="chk" for="net" style="margin-top:8px"><input type="checkbox" id="net"><span>외부 요청 허용 (기본은 막음)</span></label>
+        </div>
+
+        <div id="pyIn" hidden>
+          <div class="drop" id="drop">파일, 폴더, zip을 여기로 끌어다 놓거나 아래 버튼으로 올리세요. 폴더 구조(예: <code>패키지/</code>, <code>tests/</code>)가 있어야 import가 맞게 동작해요.</div>
+          <div class="row" style="margin-top:8px">
+            <label class="btn" for="pyFile">파일·zip 올리기<input type="file" id="pyFile" class="vh" accept=".py,.zip,.txt,.json,.md,.csv,.yaml,.yml,.toml,.cfg,.ini" multiple></label>
+            <label class="btn" for="pyDir">폴더 올리기<input type="file" id="pyDir" class="vh" webkitdirectory multiple></label>
+            <button type="button" id="pySample">예시 불러오기</button>
+          </div>
+          <h3 style="margin-top:12px">파일 <span id="fileCount" class="note"></span></h3>
+          <div class="files" id="files" role="list"></div>
+          <div class="row" style="margin-top:8px">
+            <input type="text" id="newFile" placeholder="새 파일 경로 (예: pkg/util.py)" aria-label="새 파일 경로" style="flex:1 1 180px">
+            <button type="button" id="addFile">파일 추가</button>
+          </div>
+          <label class="l" for="pyCode" id="pyCodeLabel" style="display:block;margin-top:8px">선택한 파일 내용 (직접 고칠 수 있어요)</label>
+          <textarea id="pyCode" spellcheck="false" placeholder="파일을 고르면 내용이 보여요"></textarea>
+          <label class="l" for="entry" style="display:block;margin-top:8px">실행할 것</label>
+          <select id="entry"></select>
+          <details class="how" style="margin-top:8px"><summary>인자와 입력(stdin)</summary>
+            <label class="l" for="args" style="display:block;margin-top:6px">명령줄 인자 (공백으로 구분)</label>
+            <input type="text" id="args" autocomplete="off" placeholder="예: run">
+            <label class="l" for="stdin" style="display:block;margin-top:6px">input()에 줄 값 (한 줄에 하나)</label>
+            <textarea id="stdin" style="min-height:64px"></textarea>
+          </details>
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="primary" id="pyRun">실행</button>
+          </div>
+        </div>
+        <p class="limits" id="limits"></p>
       </section>
 
-      <section class="card" aria-labelledby="h-err">
-        <h2 id="h-err">실행 중 발견된 오류</h2>
-        <div id="errBox" aria-live="polite"></div>
+      <section class="card" aria-labelledby="h-log">
+        <h2 id="h-log">실행 기록</h2>
+        <div class="status b-wait" id="logStatus" aria-live="polite"></div>
+        <ul class="evs" id="evs"></ul>
+        <details class="how"><summary>무엇을 감시하나요?</summary>
+          <p style="margin:6px 0 0" id="watchText"></p>
+        </details>
       </section>
 
       <section class="card" aria-labelledby="h-check">
-        <h2 id="h-check">직접 확인 체크리스트</h2>
-        <div id="list"></div>
+        <h2 id="h-check">점검 목록</h2>
+        <div class="bar"><h3>자동 점검</h3><button type="button" class="small" id="smokeBtn">자동 탐색 실행</button></div>
+        <div id="listAuto"></div>
+        <h3>이 코드에서 뽑은 확인 항목</h3>
+        <div id="listSuggest"></div>
+        <h3>내가 추가한 항목</h3>
+        <div id="listCustom"></div>
         <div class="row">
           <input type="text" id="addText" placeholder="확인할 항목 추가" aria-label="확인할 항목 추가" style="flex:1 1 200px">
           <button type="button" id="addBtn">추가</button>
@@ -155,7 +248,7 @@ label.l{font-size:13px;color:var(--muted)}
           <button type="button" class="primary" id="copy">개발자에게 넘길 메모 만들기</button>
           <span class="note" id="copyMsg" aria-live="polite"></span>
         </div>
-        <textarea id="handoff" readonly hidden aria-label="개발자에게 넘길 메모" style="min-height:140px"></textarea>
+        <textarea id="handoff" readonly hidden aria-label="개발자에게 넘길 메모" style="min-height:160px"></textarea>
         <p class="note" id="storeNote">표시, 메모, 넣은 코드는 이 기기의 이 브라우저에만 저장됩니다. 다른 기기에서는 보이지 않고, 브라우저 데이터를 지우면 사라집니다.</p>
       </section>
     </div>
@@ -163,177 +256,798 @@ label.l{font-size:13px;color:var(--muted)}
 </div>
 
 <script>
-(function(){
-  var KEY = 'code-lab-v1';
-  var BASE = [
-    {id:'run', t:'화면이 열리고 오류 없이 보인다'},
-    {id:'phone', t:'휴대폰 폭(360)에서 화면 안에 들어오고 글자가 읽힌다'},
-    {id:'core', t:'핵심 기능을 처음부터 끝까지 한 번 해 본다'},
-    {id:'edge', t:'엉뚱하게 눌러도 깨지지 않는다 (빈 입력, 연타, 뒤로 가기)'}
-  ];
-  var SAMPLE_NAME = '예시: 클릭 카운터';
-  var SAMPLE_CODE = '<!doctype html>\n<html lang="ko">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>클릭 카운터</title>\n<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0}.box{text-align:center}#n{font-size:56px;margin:12px 0}button{font-size:16px;padding:12px 20px;border-radius:10px;border:1px solid #888;cursor:pointer}</style>\n</head>\n<body>\n<div class="box"><div>눌린 횟수</div><div id="n">0</div><button id="b">누르기</button> <button id="r">처음으로</button></div>\n<script>\nvar n=0,out=document.getElementById("n");\ndocument.getElementById("b").onclick=function(){n++;out.textContent=n};\ndocument.getElementById("r").onclick=function(){n=0;out.textContent=n};\n<\/script>\n</body>\n</html>\n';
-  var $ = function(id){ return document.getElementById(id); };
-  var stage = $('stage'), frame = $('frame');
-
-  function uid(){ return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-  function mk(name, code){ return {id:uid(), name:name, code:code, items:{}, custom:[], memo:''}; }
-  var S = {tests:[], cur:null, net:false};
-  try { var raw = localStorage.getItem(KEY); if (raw) S = JSON.parse(raw); } catch(e) {}
-  if (!S.tests || !S.tests.length) { S.tests = [mk(SAMPLE_NAME, SAMPLE_CODE)]; S.cur = S.tests[0].id; }
-  var storeOk = true;
-  function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) { storeOk = false; $('storeNote').textContent = '이 브라우저에서는 저장이 막혀 있어요. 페이지를 닫으면 입력한 내용이 사라집니다.'; } }
-  function cur(){ for (var i = 0; i < S.tests.length; i++) { if (S.tests[i].id === S.cur) return S.tests[i]; } S.cur = S.tests[0].id; return S.tests[0]; }
-
-  /* 실행 */
-  var CSP = '<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'">';
-  var BOOT = '<script>(function(){function s(t,m){try{parent.postMessage({__lab:1,t:t,m:String(m)},"*")}catch(e){}}' +
-    'window.addEventListener("error",function(e){s("error",(e.message||"오류")+(e.lineno?" (줄 "+e.lineno+")":""))});' +
-    'window.addEventListener("unhandledrejection",function(e){s("error","처리되지 않은 오류: "+((e.reason&&e.reason.message)||e.reason))});' +
-    'var ce=console.error;console.error=function(){s("console",Array.prototype.slice.call(arguments).join(" "));ce.apply(console,arguments)};})();<\/script>';
-  function inject(code){
-    var head = (S.net ? '' : CSP) + BOOT;
-    var m = /<head[^>]*>/i.exec(code);
-    if (m) { var i = m.index + m[0].length; return code.slice(0, i) + head + code.slice(i); }
-    return head + code;
-  }
-  var errs = [];
-  function renderErrs(){
-    var box = $('errBox'); box.innerHTML = '';
-    if (!errs.length) { var d = document.createElement('div'); d.className = 'okline'; d.textContent = '지금까지 발견된 오류가 없습니다.'; box.appendChild(d); return; }
-    var ul = document.createElement('ul'); ul.className = 'errs';
-    errs.forEach(function(e){ var li = document.createElement('li'); li.textContent = (e.t === 'console' ? '콘솔 오류: ' : '오류: ') + e.m; ul.appendChild(li); });
-    box.appendChild(ul);
-    var p = document.createElement('p'); p.className = 'note'; p.textContent = 'localStorage 관련 오류는 실험실의 격리 때문에 나타날 수 있어요. 저장 기능은 실제 배포 환경에서 확인하세요.';
-    box.appendChild(p);
-  }
-  window.addEventListener('message', function(ev){
-    if (ev.source !== stage.contentWindow || !ev.data || !ev.data.__lab) return;
-    if (errs.length < 50) { errs.push({t:ev.data.t, m:ev.data.m}); renderErrs(); }
+/* ===== 실행 화면(iframe) 안에서 돌아가는 감시·탐색 코드. 함수 본문을 문자열로 넣어서 씁니다. ===== */
+function boot(RUN){
+  var T0=Date.now(), errTotal=0;
+  function send(t,m,x){ try{ parent.postMessage({__lab:1,r:RUN,t:t,m:String(m==null?'':m),x:x||null,at:Date.now()-T0},'*'); }catch(e){} }
+  ['localStorage','sessionStorage'].forEach(function(name){
+    try{ window[name].getItem('__t'); }catch(e){
+      var d={};
+      var s={getItem:function(k){return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},setItem:function(k,v){d[k]=String(v)},removeItem:function(k){delete d[k]},clear:function(){d={}},key:function(i){var ks=Object.keys(d);return i<ks.length?ks[i]:null}};
+      Object.defineProperty(s,'length',{get:function(){return Object.keys(d).length}});
+      try{ Object.defineProperty(window,name,{value:s,configurable:true}); send('note',name+'을(를) 실험실에서는 임시 저장소로 대신해요 (새로고침하면 지워져요)'); }
+      catch(_){ send('note',name+'을(를) 이 화면에서는 쓸 수 없어요'); }
+    }
   });
-  function run(){
-    errs = []; renderErrs();
-    var code = cur().code || '';
-    stage.srcdoc = '';
-    requestAnimationFrame(function(){ stage.srcdoc = code.trim() ? inject(code) : '<p style="font-family:sans-serif;color:#555;padding:16px">코드를 넣고 실행을 누르세요.</p>'; });
-  }
-  $('run').addEventListener('click', run);
-
-  /* 화면 폭 */
-  var devBtns = document.querySelectorAll('button.dev');
-  function setWidth(w){ frame.style.maxWidth = w; devBtns.forEach(function(b){ b.setAttribute('aria-pressed', b.getAttribute('data-w') === w ? 'true' : 'false'); }); }
-  devBtns.forEach(function(b){ b.addEventListener('click', function(){ setWidth(b.getAttribute('data-w')); }); });
-  setWidth('360px');
-
-  /* 외부 요청 */
-  $('net').checked = !!S.net;
-  $('net').addEventListener('change', function(){ S.net = $('net').checked; save(); run(); });
-
-  /* 테스트 선택·추가·삭제 */
-  function renderSel(){
-    var sel = $('testSel'); sel.innerHTML = '';
-    S.tests.forEach(function(t){ var o = document.createElement('option'); o.value = t.id; o.textContent = t.name || '이름 없음'; if (t.id === S.cur) o.selected = true; sel.appendChild(o); });
-  }
-  function loadCur(doRun){
-    var t = cur();
-    $('tname').value = t.name; $('code').value = t.code; $('memo').value = t.memo || '';
-    $('handoff').hidden = true; $('copyMsg').textContent = '';
-    renderSel(); renderList(); tally();
-    if (doRun) run();
-  }
-  $('testSel').addEventListener('change', function(){ S.cur = $('testSel').value; save(); armed = false; $('delTest').textContent = '삭제'; $('delTest').classList.remove('warn'); loadCur(true); });
-  $('newTest').addEventListener('click', function(){ var t = mk('새 테스트', ''); S.tests.push(t); S.cur = t.id; save(); loadCur(true); $('code').focus(); });
-  var armed = false, armTimer = null;
-  $('delTest').addEventListener('click', function(){
-    var b = $('delTest');
-    if (!armed) { armed = true; b.textContent = '정말 삭제'; b.classList.add('warn'); armTimer = setTimeout(function(){ armed = false; b.textContent = '삭제'; b.classList.remove('warn'); }, 4000); return; }
-    clearTimeout(armTimer); armed = false; b.textContent = '삭제'; b.classList.remove('warn');
-    S.tests = S.tests.filter(function(t){ return t.id !== S.cur; });
-    if (!S.tests.length) S.tests = [mk('새 테스트', '')];
-    S.cur = S.tests[0].id; save(); loadCur(true);
-  });
-  $('tname').addEventListener('input', function(){ cur().name = $('tname').value; save(); renderSel(); });
-  $('code').addEventListener('input', function(){ cur().code = $('code').value; save(); });
-  $('sample').addEventListener('click', function(){ var t = mk(SAMPLE_NAME, SAMPLE_CODE); S.tests.push(t); S.cur = t.id; save(); loadCur(true); });
-
-  /* 파일 올리기, 끌어다 놓기 */
-  function takeFile(f){
-    if (!f) return;
-    var r = new FileReader();
-    r.onload = function(){
-      var t = cur(); t.code = String(r.result || '');
-      if (!t.name || t.name === '새 테스트') t.name = f.name.replace(/\.[^.]+$/, '');
-      save(); loadCur(true);
+  window.addEventListener('error',function(e){
+    if(e.target&&e.target!==window&&(e.target.src||e.target.href)){ send('resource','불러오지 못함: <'+String(e.target.tagName).toLowerCase()+'> '+(e.target.src||e.target.href)); return; }
+    errTotal++; send('error',(e.message||'오류')+(e.lineno?' (줄 '+e.lineno+')':''));
+  },true);
+  window.addEventListener('unhandledrejection',function(e){ errTotal++; send('error','처리되지 않은 Promise 거부: '+((e.reason&&e.reason.message)||e.reason)); });
+  document.addEventListener('securitypolicyviolation',function(e){ send('blocked','차단됨: '+e.violatedDirective+' '+e.blockedURI); });
+  var logN=0;
+  ['log','info','warn','error'].forEach(function(k){
+    var orig=console[k];
+    console[k]=function(){
+      var msg=Array.prototype.slice.call(arguments).map(function(a){ try{ return typeof a==='object'?JSON.stringify(a):String(a); }catch(e){ return String(a); } }).join(' ');
+      if(k==='error'){ errTotal++; send('console-error',msg); } else if(k==='warn'){ send('warn',msg); } else if(logN++<60){ send('log',msg); }
+      try{ orig.apply(console,arguments); }catch(e){}
     };
-    r.readAsText(f);
-  }
-  $('file').addEventListener('change', function(){ takeFile($('file').files[0]); $('file').value = ''; });
-  var codeEl = $('code');
-  ['dragenter','dragover'].forEach(function(n){ codeEl.addEventListener(n, function(e){ e.preventDefault(); codeEl.classList.add('drag'); }); });
-  ['dragleave','drop'].forEach(function(n){ codeEl.addEventListener(n, function(e){ e.preventDefault(); codeEl.classList.remove('drag'); if (n === 'drop' && e.dataTransfer && e.dataTransfer.files.length) takeFile(e.dataTransfer.files[0]); }); });
+  });
+  send('ready','');
+  window.addEventListener('load',function(){ send('load',''); setTimeout(staticCheck,400); });
 
-  /* 체크리스트 */
-  function get(t, id){ return t.items[id] || {s:'none', n:''}; }
-  function allItems(t){ return BASE.concat(t.custom || []); }
-  function tally(){
-    var t = cur(), c = {ok:0, bad:0, none:0};
-    allItems(t).forEach(function(it){ c[get(t, it.id).s]++; });
-    $('tally').innerHTML = '<span class="pill ok">잘 됨 ' + c.ok + '</span><span class="pill bad">문제 ' + c.bad + '</span><span class="pill none">미확인 ' + c.none + '</span>';
+  function staticCheck(){
+    var d=document,de=d.documentElement,btn=0,noName=0,inp=0,noLab=0;
+    d.querySelectorAll('button,[role=button],input[type=button],input[type=submit]').forEach(function(b){
+      btn++; var t=(b.textContent||b.value||'').trim();
+      if(!t&&!b.getAttribute('aria-label')&&!b.getAttribute('title')&&!b.getAttribute('aria-labelledby')) noName++;
+    });
+    d.querySelectorAll('input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=radio]):not([type=checkbox]),select,textarea').forEach(function(i){
+      inp++;
+      var ok=i.getAttribute('aria-label')||i.getAttribute('aria-labelledby')||i.getAttribute('placeholder')||i.getAttribute('title')||(i.id&&d.querySelector('label[for="'+String(i.id).replace(/"/g,'')+'"]'))||(i.closest&&i.closest('label'));
+      if(!ok) noLab++;
+    });
+    send('static','',{w:window.innerWidth,sw:de.scrollWidth,over:de.scrollWidth>window.innerWidth+1,viewport:!!d.querySelector('meta[name=viewport]'),lang:!!de.getAttribute('lang'),btn:btn,btnNoName:noName,inp:inp,inpNoLabel:noLab,img:d.querySelectorAll('img').length,imgNoAlt:d.querySelectorAll('img:not([alt])').length});
   }
-  function renderList(){
-    var host = $('list'), t = cur(); host.innerHTML = '';
-    allItems(t).forEach(function(it){
-      var row = document.createElement('div'); row.className = 'item';
-      var p = document.createElement('p'); p.textContent = it.t; row.appendChild(p);
-      var st = document.createElement('div'); st.className = 'state'; st.setAttribute('role', 'group'); st.setAttribute('aria-label', it.t);
-      [['none','미확인'],['ok','잘 됨'],['bad','문제']].forEach(function(o){
-        var b = document.createElement('button'); b.type = 'button'; b.setAttribute('data-s', o[0]); b.textContent = o[1];
-        b.setAttribute('aria-pressed', get(t, it.id).s === o[0] ? 'true' : 'false');
-        b.addEventListener('click', function(){
-          var c = get(t, it.id); c.s = o[0]; t.items[it.id] = c; save();
-          st.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
-          tally();
-        });
-        st.appendChild(b);
+
+  function smoke(seed){
+    var rnd=(function(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};})(seed);
+    var muts=0,mo=new MutationObserver(function(l){muts+=l.length;});
+    mo.observe(document.documentElement,{childList:true,subtree:true,attributes:true,characterData:true});
+    var info={},steps=0,keys=0,alerts=0,t0=Date.now(),e0=errTotal;
+    var oa=window.alert,oc=window.confirm,op=window.prompt;
+    window.alert=function(){alerts++;}; window.confirm=function(){alerts++;return true;}; window.prompt=function(){alerts++;return '테스트';};
+    function stopNav(e){ var a=e.target&&e.target.closest&&e.target.closest('a[href]'); if(a){ var h=a.getAttribute('href')||''; if(h.charAt(0)!=='#'&&!/^javascript:/i.test(h)) e.preventDefault(); } }
+    function stopSubmit(e){ e.preventDefault(); }
+    document.addEventListener('click',stopNav,true); document.addEventListener('submit',stopSubmit,true);
+    function vis(el){
+      var r=el.getBoundingClientRect(); if(r.width<1||r.height<1) return false;
+      var cs=getComputedStyle(el); if(cs.visibility==='hidden'||cs.display==='none'||cs.pointerEvents==='none') return false;
+      if(el.checkVisibility&&!el.checkVisibility()) return false; return true;
+    }
+    function txt(el){ var f=/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName); var v=f?(el.getAttribute('aria-label')||el.placeholder||el.name||el.id||(el.id&&''))||'' : (el.getAttribute('aria-label')||el.textContent||el.value||''); if(f&&el.type&&/^(button|submit|reset)$/.test(el.type)) v=el.value||v; return v.replace(/\s+/g,' ').trim(); }
+    function label(el){ var ty=el.tagName==='INPUT'?'['+(el.type||'text')+']':''; var t=txt(el); return el.tagName.toLowerCase()+ty+(t?' "'+t.slice(0,28)+'"':''); }
+    function key(el){
+      var p=[],n=el; while(n&&n.nodeType===1&&n!==document.body){ var i=0,s=n; while((s=s.previousElementSibling)) i++; p.push(n.tagName+i); n=n.parentElement; }
+      return p.join('>')+'|'+txt(el).slice(0,20)+'|'+(el.type==='radio'||el.type==='checkbox'?el.value:'');
+    }
+    function ctrls(){
+      var out=[];
+      document.querySelectorAll('button,a[href],input,select,textarea,summary,canvas,[role=button],[onclick]').forEach(function(el){
+        if(el.disabled||el.getAttribute('aria-disabled')==='true') return;
+        if(el.tagName==='INPUT'&&/^(file|hidden|image|color|range)$/.test(el.type)) return;
+        if(vis(el)) out.push(el);
       });
-      row.appendChild(st);
-      var inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = '메모'; inp.value = get(t, it.id).n || '';
-      inp.setAttribute('aria-label', '메모: ' + it.t);
-      inp.addEventListener('input', function(){ var c = get(t, it.id); c.n = inp.value; t.items[it.id] = c; save(); });
-      row.appendChild(inp);
-      host.appendChild(row);
+      return out;
+    }
+    var CLOSE=/(닫기|취소|이전|뒤로|삭제|지우기|초기화|리셋|다시|close|cancel|back|prev|delete|remove|reset|clear|×|✕)/i;
+    function weight(el){
+      var k=key(el),n=(info[k]&&info[k].n)||0,w=1/Math.pow(1+Math.min(n,3),1.5);
+      if(CLOSE.test(txt(el))) w*=0.15;
+      if(el.type==='radio'){ var g=el.name&&document.querySelectorAll('input[type=radio][name="'+el.name+'"]:checked').length; w*=g?0.1:2; }
+      else if(el.tagName==='TEXTAREA'||el.tagName==='SELECT'||(el.tagName==='INPUT'&&!/^(checkbox|button|submit|reset)$/.test(el.type))){ w*=el.value?0.2:3; }
+      return w;
+    }
+    var SAMPLES=['테스트','a','가나다라마바사 가나다라마바사 가나다라마바사 가나다라마바사 가나다라마바사 가나다라마바사 가나다라마바사','<b>x</b> & "q" \'s\'',"' OR 1=1 --",'😀 이모지','   '];
+    function sample(el){
+      var ty=(el.type||'').toLowerCase();
+      if(ty==='number'){ var mn=el.min!==''?+el.min:1; var mx=el.max!==''?+el.max:null; return String(mx!==null&&mx<mn?mx:mn); }
+      if(ty==='email') return 'test@example.com'; if(ty==='tel') return '010-1234-5678'; if(ty==='url') return 'https://example.com';
+      if(ty==='date') return new Date().toISOString().slice(0,10); if(ty==='time') return '09:00'; if(ty==='password') return 'Test1234!';
+      return SAMPLES[Math.floor(rnd()*SAMPLES.length)];
+    }
+    function setVal(el,v){
+      var proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+      try{ Object.getOwnPropertyDescriptor(proto,'value').set.call(el,v); }catch(e){ el.value=v; }
+      el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    function pressKey(target,name){
+      ['keydown','keyup'].forEach(function(t){ try{ (target||document.body).dispatchEvent(new KeyboardEvent(t,{key:name,code:name,bubbles:true})); }catch(e){} });
+    }
+    function act(el){
+      var k=key(el),rec=info[k]||(info[k]={label:label(el),n:0,react:0,err:0}); rec.n++;
+      var m0=muts,e0b=errTotal;
+      try{
+        var tn=el.tagName,ty=(el.type||'').toLowerCase();
+        if(tn==='SELECT'){ if(el.options.length){ el.selectedIndex=Math.floor(rnd()*el.options.length); el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); } }
+        else if(tn==='CANVAS'){ var r=el.getBoundingClientRect(),x=r.left+rnd()*r.width,y=r.top+rnd()*r.height; ['mousedown','mouseup','click'].forEach(function(t){ el.dispatchEvent(new MouseEvent(t,{bubbles:true,clientX:x,clientY:y})); }); }
+        else if(tn==='TEXTAREA'||(tn==='INPUT'&&!/^(checkbox|radio|button|submit|reset)$/.test(ty))){ setVal(el,sample(el)); if(rnd()<0.5) pressKey(el,'Enter'); }
+        else el.click();
+      }catch(e){ errTotal++; send('error','자동 탐색 중 예외: '+e.message); }
+      setTimeout(function(){ if(muts>m0) rec.react++; if(errTotal>e0b) rec.err++; },60);
+    }
+    var KEYS=['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Enter','Escape'];
+    function finish(){
+      mo.disconnect(); window.alert=oa; window.confirm=oc; window.prompt=op;
+      document.removeEventListener('click',stopNav,true); document.removeEventListener('submit',stopSubmit,true);
+      var arr=Object.keys(info).map(function(k){return info[k];}).sort(function(a,b){return b.n-a.n;});
+      send('smoke','',{steps:steps,keys:keys,seed:seed,ms:Date.now()-t0,seen:arr.length,errors:errTotal-e0,alerts:alerts,controls:arr.slice(0,80)});
+    }
+    function step(){
+      if(steps>=150||Date.now()-t0>8000) return finish();
+      steps++;
+      if(rnd()<0.12){ keys++; pressKey(document.activeElement,KEYS[Math.floor(rnd()*KEYS.length)]); return setTimeout(step,70); }
+      var list=ctrls();
+      if(!list.length){ return setTimeout(function(){ if(!ctrls().length) finish(); else step(); },150); }
+      var ws=list.map(weight),sum=ws.reduce(function(a,b){return a+b;},0),r=rnd()*sum,i=0;
+      while(i<ws.length-1&&r>ws[i]){ r-=ws[i]; i++; }
+      act(list[i]); setTimeout(step,70);
+    }
+    step();
+  }
+  window.addEventListener('message',function(e){
+    var m=e.data; if(!m||!m.__labcmd) return;
+    if(m.__labcmd==='static') staticCheck(); else if(m.__labcmd==='smoke') smoke(m.seed||1);
+  });
+}
+
+/* ===== 파이썬 실행 담당(Web Worker). Pyodide(브라우저용 파이썬)를 불러와서 돌립니다. ===== */
+function workerMain(){
+  var py=null;
+  function post(t,d){ self.postMessage(Object.assign({t:t},d||{})); }
+  function status(s){ post('status',{text:s}); }
+  function safePath(p){ p=String(p).replace(/\\/g,'/').replace(/^\/+/,''); if(!p||p.split('/').some(function(x){return x==='..';})) return null; return p; }
+  var RUNNER="import sys, os, io, json, time, runpy, traceback, shutil, unittest, warnings, importlib\n"+
+"warnings.simplefilter('ignore')\n"+
+"def _clean():\n"+
+"    for k,m in list(sys.modules.items()):\n"+
+"        f=getattr(m,'__file__',None)\n"+
+"        if f and str(f).startswith('/proj'): del sys.modules[k]\n"+
+"    sys.path[:]=[p for p in sys.path if not str(p).startswith('/proj')]\n"+
+"    importlib.invalidate_caches()\n"+
+"def _roots():\n"+
+"    r=['/proj']\n"+
+"    if os.path.isdir('/proj/src'): r.append('/proj/src')\n"+
+"    return r\n"+
+"class _R(unittest.TestResult):\n"+
+"    def __init__(s):\n"+
+"        super().__init__(); s.rows=[]; s._t=0\n"+
+"    def startTest(s,t):\n"+
+"        super().startTest(t); s._t=time.time()\n"+
+"    def _add(s,t,st,msg=''):\n"+
+"        s.rows.append({'id':t.id(),'status':st,'ms':int((time.time()-s._t)*1000),'msg':msg})\n"+
+"    def addSuccess(s,t): super().addSuccess(t); s._add(t,'pass')\n"+
+"    def addFailure(s,t,e): super().addFailure(t,e); s._add(t,'fail',s._exc_info_to_string(e,t))\n"+
+"    def addError(s,t,e): super().addError(t,e); s._add(t,'error',s._exc_info_to_string(e,t))\n"+
+"    def addSkip(s,t,r): super().addSkip(t,r); s._add(t,'skip',str(r))\n"+
+"def run_tests():\n"+
+"    _clean(); roots=_roots(); sys.path[:0]=roots; os.chdir('/proj')\n"+
+"    start='/proj/tests' if os.path.isdir('/proj/tests') else '/proj'\n"+
+"    suite=unittest.defaultTestLoader.discover(start,pattern='test*.py')\n"+
+"    r=_R(); t0=time.time(); suite.run(r)\n"+
+"    return json.dumps({'rows':r.rows,'count':r.testsRun,'start':start,'ms':int((time.time()-t0)*1000)},ensure_ascii=False)\n"+
+"def run_target(kind,target,args):\n"+
+"    _clean(); sys.path[:0]=_roots(); os.chdir('/proj'); sys.argv=[target]+list(args)\n"+
+"    code=0\n"+
+"    try:\n"+
+"        if kind=='module': runpy.run_module(target,run_name='__main__',alter_sys=True)\n"+
+"        else:\n"+
+"            os.chdir(os.path.dirname('/proj/'+target) or '/proj'); sys.path.insert(0,os.getcwd())\n"+
+"            runpy.run_path('/proj/'+target,run_name='__main__')\n"+
+"    except SystemExit as e:\n"+
+"        code=e.code if isinstance(e.code,int) else (0 if e.code is None else 1)\n"+
+"        if isinstance(e.code,str): print(e.code,file=sys.stderr)\n"+
+"    except BaseException:\n"+
+"        traceback.print_exc(); code=1\n"+
+"    return json.dumps({'exit':code})\n"+
+"def unpack(zpath):\n"+
+"    import zipfile\n"+
+"    shutil.rmtree('/tmp/unz',ignore_errors=True); os.makedirs('/tmp/unz')\n"+
+"    out=[]; total=0\n"+
+"    with zipfile.ZipFile(zpath) as z:\n"+
+"        names=[n for n in z.namelist() if not n.endswith('/')]\n"+
+"        def ok(n): return not (n.startswith('/') or '..' in n.split('/') or '__MACOSX' in n or '/.git/' in '/'+n or '__pycache__' in n or 'node_modules' in n or n.endswith('.pyc') or n.endswith('.DS_Store'))\n"+
+"        names=[n for n in names if ok(n)]\n"+
+"        tops={n.split('/')[0] for n in names}\n"+
+"        strip=len(tops)==1 and all('/' in n for n in names)\n"+
+"        exts=('.py','.txt','.md','.json','.csv','.yaml','.yml','.toml','.cfg','.ini','.sql','.html','.js')\n"+
+"        for n in names:\n"+
+"            if not n.lower().endswith(exts): continue\n"+
+"            b=z.read(n)\n"+
+"            if len(b)>400000 or total+len(b)>3000000: continue\n"+
+"            try: t=b.decode('utf-8')\n"+
+"            except Exception: continue\n"+
+"            total+=len(b); out.append({'path':n.split('/',1)[1] if strip else n,'text':t})\n"+
+"    return json.dumps(out,ensure_ascii=False)\n";
+  async function init(base){
+    status('파이썬을 불러오는 중입니다 (처음 한 번만 오래 걸려요)');
+    var mod=await import(base+'pyodide.mjs');
+    py=await mod.loadPyodide({indexURL:base});
+    py.runPython(RUNNER);
+    post('ready',{version:py.version});
+  }
+  function writeFiles(files){
+    py.runPython("import shutil,os\nos.chdir('/')\nif os.path.isdir('/proj'):\n    for n in os.listdir('/proj'):\n        q=os.path.join('/proj',n)\n        shutil.rmtree(q,ignore_errors=True) if os.path.isdir(q) else os.remove(q)\nos.makedirs('/proj',exist_ok=True)");
+    files.forEach(function(f){
+      var p=safePath(f.path); if(!p) return; var full='/proj/'+p;
+      py.FS.mkdirTree(full.substring(0,full.lastIndexOf('/'))); py.FS.writeFile(full,f.text);
     });
   }
-  function addItem(){
-    var v = $('addText').value.trim(); if (!v) return;
-    var t = cur(); t.custom = t.custom || []; t.custom.push({id:uid(), t:v}); $('addText').value = ''; save(); renderList(); tally();
+  async function needPackages(files){
+    var src=files.map(function(f){return f.text;}).join('\n');
+    status('필요한 패키지를 확인하는 중');
+    var cb={messageCallback:function(){},errorCallback:function(m){ post('warn',{text:String(m).slice(0,300)}); }};
+    try{ await py.loadPackagesFromImports(src,cb); }catch(e){ post('warn',{text:'import한 패키지를 불러오지 못했어요: '+String(e).slice(0,200)}); }
+    if(/zoneinfo/.test(src)){ try{ await py.loadPackage('tzdata',cb); }catch(e){ post('warn',{text:'시간대 데이터(tzdata)를 불러오지 못했어요: '+String(e).slice(0,200)}); } }
   }
-  $('addBtn').addEventListener('click', addItem);
-  $('addText').addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
-  $('memo').addEventListener('input', function(){ cur().memo = $('memo').value; save(); });
+  self.onmessage=async function(e){
+    var m=e.data;
+    try{
+      if(m.t==='init'){ await init(m.base); return; }
+      if(m.t==='unpack'){
+        status('zip을 푸는 중'); py.FS.writeFile('/tmp/up.zip',new Uint8Array(m.bytes));
+        var u=py.runPython("unpack('/tmp/up.zip')"); post('result',{kind:'unpack',files:JSON.parse(u)}); return;
+      }
+      if(m.t==='run'){
+        writeFiles(m.files); await needPackages(m.files);
+        var lines=String(m.stdin||'').length?String(m.stdin).split('\n'):[];
+        py.setStdout({batched:function(s){post('out',{k:'out',s:s});}});
+        py.setStderr({batched:function(s){post('out',{k:'err',s:s});}});
+        py.setStdin({stdin:function(){ return lines.length?lines.shift():undefined; }});
+        status('실행 중');
+        var t0=performance.now(), res;
+        if(m.kind==='tests'){ res=py.runPython('run_tests()'); post('result',{kind:'tests',data:JSON.parse(res),ms:Math.round(performance.now()-t0)}); }
+        else{
+          py.globals.set('_k',m.kind); py.globals.set('_t',m.target); py.globals.set('_a',m.args||[]);
+          res=py.runPython('run_target(_k,_t,list(_a))'); post('result',{kind:'run',data:JSON.parse(res),ms:Math.round(performance.now()-t0)});
+        }
+        return;
+      }
+    }catch(err){ post('fatal',{text:String(err&&err.message||err).slice(0,3000)}); }
+  };
+}
 
-  /* 개발자에게 넘길 메모 */
-  var label = {ok:'잘 됨', bad:'문제', none:'미확인'};
-  $('copy').addEventListener('click', function(){
-    var t = cur();
-    var lines = ['[코드 실험실 테스트 메모] ' + (t.name || '이름 없음'),
-      '화면 폭: ' + (frame.style.maxWidth || '넓게') + ' · 실행 중 발견된 오류 ' + errs.length + '건'];
-    errs.slice(0, 10).forEach(function(e){ lines.push('  - ' + e.m); });
-    lines.push('');
-    allItems(t).forEach(function(it){ var c = get(t, it.id); lines.push('- [' + label[c.s] + '] ' + it.t + (c.n ? ' / 메모: ' + c.n : '')); });
-    if (t.memo) { lines.push('', '전체 메모:', t.memo); }
-    var text = lines.join('\n');
-    var out = $('handoff'); out.hidden = false; out.value = text;
-    var msg = $('copyMsg');
-    function fallback(){ out.focus(); out.select(); msg.textContent = '복사가 막혀 있어요. 아래 글을 직접 선택해 복사하세요.'; }
-    try { navigator.clipboard.writeText(text).then(function(){ msg.textContent = '복사했어요.'; }, fallback); } catch(e) { fallback(); }
+/* ===== 본체 ===== */
+(function(){
+  var KEY='code-lab-v2', OLD='code-lab-v1';
+  var $=function(id){ return document.getElementById(id); };
+  var qs=new URLSearchParams(location.search);
+  var PY_BASE=new URL(qs.get('pyodide')||'https://cdn.jsdelivr.net/pyodide/v314.0.8/full/',location.href).href;
+  function uid(){ return 't'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+  var SAMPLE_WEB='<!doctype html>\n<html lang="ko">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>할 일 목록</title>\n<style>body{font-family:system-ui,sans-serif;max-width:420px;margin:24px auto;padding:0 16px}li{display:flex;gap:8px;align-items:center;margin:6px 0}input[type=text]{flex:1;padding:8px}button{padding:8px 12px}</style>\n</head>\n<body>\n<h1>할 일</h1>\n<form id="f"><label for="t">새 할 일</label><div style="display:flex;gap:8px"><input type="text" id="t"><button id="add">추가</button></div></form>\n<ul id="list"></ul>\n<p id="count">0개</p>\n<script>\nvar items=JSON.parse(localStorage.getItem("todo")||"[]");\nfunction draw(){var ul=document.getElementById("list");ul.innerHTML="";items.forEach(function(x,i){var li=document.createElement("li");var s=document.createElement("span");s.textContent=x;var b=document.createElement("button");b.textContent="삭제";b.onclick=function(){items.splice(i,1);save()};li.appendChild(s);li.appendChild(b);ul.appendChild(li)});document.getElementById("count").textContent=items.length+"개"}\nfunction save(){localStorage.setItem("todo",JSON.stringify(items));draw()}\ndocument.getElementById("f").onsubmit=function(e){e.preventDefault();var v=document.getElementById("t").value;items.push(v.trim().toUpperCase());document.getElementById("t").value="";save()};\ndraw();\n<\/script>\n</body>\n</html>\n';
+  var SAMPLE_PY=[
+    {path:'shop/__init__.py',text:''},
+    {path:'shop/cart.py',text:'def total(items, discount=0):\n    """items: [(이름, 가격, 수량)]. discount: 0~1 사이 비율."""\n    s = sum(p * q for _, p, q in items)\n    return round(s * (1 - discount))\n\ndef apply_coupon(total_price, code):\n    coupons = {"WELCOME10": 0.1, "VIP20": 0.2}\n    rate = coupons.get(code.upper(), 0)\n    return round(total_price * (1 - rate))\n'},
+    {path:'shop/__main__.py',text:'import sys\nfrom .cart import total\n\nitems = [("사과", 1200, 3), ("우유", 2500, 2)]\nprint("합계:", total(items))\nif len(sys.argv) > 1:\n    print("인자:", sys.argv[1:])\n'},
+    {path:'tests/test_cart.py',text:'import unittest\nfrom shop.cart import total, apply_coupon\n\nclass CartTests(unittest.TestCase):\n    def test_total(self):\n        self.assertEqual(total([("a", 1000, 2)]), 2000)\n\n    def test_discount(self):\n        self.assertEqual(total([("a", 1000, 2)], 0.1), 1800)\n\n    def test_empty(self):\n        self.assertEqual(total([]), 0)\n\n    def test_coupon_lowercase(self):\n        self.assertEqual(apply_coupon(10000, "welcome10"), 9000)\n\n    def test_unknown_coupon(self):\n        self.assertEqual(apply_coupon(10000, "nope"), 10000)\n\n    def test_negative_quantity(self):\n        # 수량이 음수면 오류여야 하는데 지금은 그냥 계산됨\n        with self.assertRaises(ValueError):\n            total([("a", 1000, -1)])\n'}
+  ];
+  function mk(name,mode){ return {id:uid(),name:name,mode:mode||'web',code:'',files:[],sel:'',entry:'',args:'',stdin:'',memo:'',custom:[],items:{}}; }
+
+  var S={v:2,tests:[],cur:null,net:false,size:'390',wide:false};
+  try{ var raw=localStorage.getItem(KEY); if(raw) S=JSON.parse(raw); else{
+    var old=localStorage.getItem(OLD);
+    if(old){ var o=JSON.parse(old); (o.tests||[]).forEach(function(t){ var n=mk(t.name||'이전 테스트','web'); n.code=t.code||''; n.memo=t.memo||''; n.custom=t.custom||[]; S.tests.push(n); }); S.cur=S.tests[0]&&S.tests[0].id; S.net=!!o.net; }
+  } }catch(e){}
+  if(!S.tests||!S.tests.length){ var first=mk('예시: 할 일 목록','web'); first.code=SAMPLE_WEB; S.tests=[first]; S.cur=first.id; }
+  S.v=2; if(!S.size) S.size='390';
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){ $('storeNote').textContent='이 브라우저에서는 저장이 막혔거나 용량이 가득 찼어요. 페이지를 닫으면 입력한 내용이 사라질 수 있어요.'; } }
+  function cur(){ for(var i=0;i<S.tests.length;i++){ if(S.tests[i].id===S.cur) return S.tests[i]; } S.cur=S.tests[0].id; return S.tests[0]; }
+
+  /* ---------- 실행 상태 (저장 안 함) ---------- */
+  var R={runId:0,counts:{},smokeTok:0,events:[],ready:false,loaded:false,started:0,noSignal:false,stat:null,smoke:null,smokeRunning:false,py:null,pyStatus:'',pyBusy:false,pyMsg:''};
+  var sigTimer=null;
+  var stage=$('stage'), fbox=$('fbox');
+
+  /* ---------- 화면 크기 ---------- */
+  var HEIGHTS={'390':780,'768':1024,'1280':800};
+  function layoutStage(){
+    var W=+S.size, H=HEIGHTS[S.size]||800;
+    var wrap=$('webStage'), cs=getComputedStyle(wrap);
+    var avail=Math.max(120,wrap.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight));
+    var sc=Math.min(1,avail/W);
+    stage.style.width=W+'px'; stage.style.height=H+'px'; stage.style.transform='scale('+sc+')';
+    fbox.style.width=Math.round(W*sc)+'px'; fbox.style.height=Math.round(H*sc)+'px';
+    $('sizeNote').textContent='실제 화면 폭 '+W+'px · '+(sc<1?'칸에 맞춰 '+Math.round(sc*100)+'%로 줄여서 표시':'100% 크기로 표시')+(sc<0.7&&!S.wide?' · "넓게 보기"를 켜면 더 크게 볼 수 있어요':'');
+    document.querySelectorAll('button.dev').forEach(function(b){ b.setAttribute('aria-pressed',b.getAttribute('data-w')===S.size?'true':'false'); });
+    $('wideBtn').setAttribute('aria-pressed',S.wide?'true':'false');
+    $('grid').classList.toggle('wide',!!S.wide);
+  }
+  document.querySelectorAll('button.dev').forEach(function(b){ b.addEventListener('click',function(){ S.size=b.getAttribute('data-w'); save(); layoutStage(); setTimeout(function(){ cmd({__labcmd:'static'}); },350); }); });
+  $('wideBtn').addEventListener('click',function(){ S.wide=!S.wide; save(); layoutStage(); setTimeout(layoutStage,60); setTimeout(function(){ cmd({__labcmd:'static'}); },350); });
+  if(window.ResizeObserver){ new ResizeObserver(function(){ if(cur().mode==='web') layoutStage(); }).observe($('webStage')); }
+  window.addEventListener('resize',function(){ if(cur().mode==='web') layoutStage(); });
+
+  /* ---------- 웹 실행 ---------- */
+  var BOOT1=boot.toString().replace(/\r?\n/g,' ');
+  var CSP='<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'">';
+  function inject(code,runId){
+    var head=(S.net?'':CSP)+'<script>('+BOOT1+')('+runId+');<\/script>';
+    var m=/<head[^>]*>/i.exec(code);
+    if(m){ var i=m.index+m[0].length; return code.slice(0,i)+head+code.slice(i); }
+    return head+code;
+  }
+  function cmd(msg){ try{ stage.contentWindow&&stage.contentWindow.postMessage(msg,'*'); }catch(e){} }
+  function addEvent(t,m,at){ var l=R.events[R.events.length-1]; for(var i=R.events.length-1;i>=0&&i>=R.events.length-30;i--){ if(R.events[i].t===t&&R.events[i].m===m){ R.events[i].n=(R.events[i].n||1)+1; R.counts[t]=(R.counts[t]||0)+1; return; } } if(R.events.length<200) R.events.push({t:t,m:m,n:1,at:at==null?Date.now()-R.started:at}); R.counts[t]=(R.counts[t]||0)+1; }
+  function runWeb(){
+    var t=cur(); R.runId++; R.events=[]; R.counts={}; R.ready=false; R.loaded=false; R.noSignal=false; R.stat=null; R.smoke=null; R.smokeRunning=false; R.started=Date.now();
+    clearTimeout(sigTimer);
+    if(!(t.code||'').trim()){ stage.srcdoc='<p style="font-family:sans-serif;color:#555;padding:16px">코드를 넣고 실행을 누르세요.</p>'; R.empty=true; renderAll(); return; }
+    R.empty=false;
+    var id=R.runId; stage.srcdoc='';
+    requestAnimationFrame(function(){ stage.srcdoc=inject(t.code,id); });
+    sigTimer=setTimeout(function(){ if(!R.ready&&R.runId===id){ R.noSignal=true; renderAll(); } },3000);
+    renderAll();
+  }
+  window.addEventListener('message',function(ev){
+    if(ev.source!==stage.contentWindow||!ev.data||!ev.data.__lab||ev.data.r!==R.runId) return;
+    var d=ev.data;
+    if(d.t==='ready'){ R.ready=true; R.noSignal=false; }
+    else if(d.t==='load'){ R.loaded=true; }
+    else if(d.t==='static'){ R.stat=d.x; }
+    else if(d.t==='smoke'){ R.smoke=d.x; R.smokeRunning=false; $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 다시 실행'; }
+    else addEvent(d.t,d.m,d.at);
+    schedule();
+  });
+  var pend=null; function schedule(){ if(pend) return; pend=setTimeout(function(){ pend=null; renderLog(); renderAuto(); renderTally(); },120); }
+  $('smokeBtn').addEventListener('click',function(){
+    if(cur().mode!=='web'){ return; }
+    if(!R.ready){ runWeb(); setTimeout(function(){ startSmoke(); },900); return; }
+    startSmoke();
+  });
+  function startSmoke(){
+    R.smoke=null; R.smokeRunning=true; var tok=++R.smokeTok, rid=R.runId; $('smokeBtn').disabled=true; $('smokeBtn').textContent='탐색 중…';
+    cmd({__labcmd:'smoke',seed:Math.floor(Math.random()*1000000)+1}); renderAuto();
+    setTimeout(function(){ if(R.smokeRunning&&R.smokeTok===tok&&R.runId===rid){ R.smokeRunning=false; $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 다시 실행'; addEvent('error','자동 탐색이 끝나지 않았어요 (화면이 멈췄거나 응답이 없음)'); renderAll(); } },14000);
+  }
+
+  /* ---------- 파이썬 ---------- */
+  var pw=null,pyReady=false,pyJob=null,pyLines=[];
+  function pyStatus(s){ R.pyStatus=s; $('pyStatus').textContent=s; }
+  function onPy(e){
+    var m=e.data;
+    if(m.t==='ready'){ pyReady=true; pyStatus('파이썬 '+m.version+' 준비됨'); if(pyJob&&pyJob.init){ pyJob.init(); pyJob.init=null; } }
+    else if(m.t==='status'){ pyStatus(m.text); }
+    else if(m.t==='out'){ pyLines.push({k:m.k,s:m.s}); if(pyLines.length>3000) pyLines.shift(); renderPyOut(); }
+    else if(m.t==='warn'){ addEvent('warn',m.text); schedule(); }
+    else if(m.t==='result'){ var j=pyJob; pyJob=null; if(j&&j.res) j.res(m); }
+    else if(m.t==='fatal'){ var j2=pyJob; pyJob=null; if(j2&&j2.rej) j2.rej(new Error(m.text)); }
+  }
+  function ensurePy(){
+    return new Promise(function(res,rej){
+      if(pw&&pyReady) return res();
+      if(!pw){
+        try{
+          pw=new Worker(URL.createObjectURL(new Blob(['('+workerMain.toString()+')()'],{type:'text/javascript'})),{type:'module'});
+        }catch(e){ return rej(new Error('이 브라우저에서는 파이썬 실행기를 만들 수 없어요')); }
+        pw.onmessage=onPy;
+        pw.onerror=function(ev){ var msg='파이썬 실행기를 불러오지 못했어요. 인터넷 연결을 확인하세요. '+(ev&&ev.message||''); pw=null; pyReady=false; if(pyJob&&pyJob.rej) pyJob.rej(new Error(msg)); pyJob=null; };
+        pw.postMessage({t:'init',base:PY_BASE});
+      }
+      pyJob={init:res,rej:rej};
+    });
+  }
+  function pyCall(msg){
+    return new Promise(function(res,rej){ pyJob={res:res,rej:rej}; pw.postMessage(msg); });
+  }
+  function stopPy(){
+    if(pw){ pw.terminate(); pw=null; pyReady=false; }
+    if(pyJob&&pyJob.rej) pyJob.rej(new Error('stopped')); pyJob=null;
+    R.pyBusy=false; $('stopBtn').disabled=true; $('pyRun').disabled=false; pyStatus('중지했어요. 다음 실행 때 파이썬을 다시 불러와요.'); renderAll();
+  }
+  $('stopBtn').addEventListener('click',stopPy);
+  function renderPyOut(){
+    var o=$('pyOut'); o.textContent='';
+    var shown=pyLines.slice(-800);
+    shown.forEach(function(l){ var s=document.createElement('span'); if(l.k==='err') s.className='e'; s.textContent=l.s+'\n'; o.appendChild(s); });
+    o.scrollTop=o.scrollHeight;
+  }
+  function entryParse(t){
+    var e=t.entry||'tests'; var i=e.indexOf(':');
+    return i<0?{kind:e,target:''}:{kind:e.slice(0,i),target:e.slice(i+1)};
+  }
+  function runPy(){
+    var t=cur();
+    if(!t.files.length){ pyStatus('파일이 없어요. 파일, 폴더, zip을 올리거나 예시를 불러오세요.'); return; }
+    R.events=[]; R.counts={}; R.runId++; R.py=null; R.started=Date.now(); R.pyBusy=true; pyLines=[]; renderPyOut(); $('pyTests').textContent='';
+    $('pyRun').disabled=true; $('stopBtn').disabled=false;
+    var en=entryParse(t);
+    var args=(t.args||'').trim()?(t.args.trim().split(/\s+/)):[];
+    renderAll();
+    ensurePy().then(function(){
+      return pyCall({t:'run',files:t.files,kind:en.kind,target:en.target,args:args,stdin:t.stdin});
+    }).then(function(m){
+      R.pyBusy=false; $('pyRun').disabled=false; $('stopBtn').disabled=true;
+      R.py={kind:m.kind,data:m.data,ms:m.ms,entry:en};
+      pyStatus('끝났어요 ('+(m.ms/1000).toFixed(1)+'초)');
+      renderPyTests(); renderAll();
+    }).catch(function(err){
+      R.pyBusy=false; $('pyRun').disabled=false; $('stopBtn').disabled=true;
+      if(String(err.message)==='stopped') return;
+      R.py={kind:'fatal',data:{text:err.message},ms:0,entry:en};
+      pyStatus('실행하지 못했어요'); pyLines.push({k:'err',s:err.message}); renderPyOut(); renderAll();
+    });
+  }
+  function renderPyTests(){
+    var host=$('pyTests'); host.textContent='';
+    if(!R.py||R.py.kind!=='tests') return;
+    var rows=R.py.data.rows||[], c={pass:0,fail:0,error:0,skip:0};
+    rows.forEach(function(r){ c[r.status]=(c[r.status]||0)+1; });
+    var sum=document.createElement('div'); sum.className='sum';
+    [['b-ok','통과 '+c.pass],['b-bad','실패 '+c.fail],['b-bad','오류 '+c.error],['b-wait','건너뜀 '+c.skip]].forEach(function(x){ var s=document.createElement('span'); s.className='pill '+x[0].replace('b-',''); s.textContent=x[1]; sum.appendChild(s); });
+    var tt=document.createElement('span'); tt.className='note'; tt.textContent='테스트 '+(R.py.data.count||0)+'개 · '+(R.py.data.start||'');
+    sum.appendChild(tt); host.appendChild(sum);
+    var order={error:0,fail:1,skip:2,pass:3};
+    rows.slice().sort(function(a,b){ return order[a.status]-order[b.status]; }).forEach(function(r){
+      var d=document.createElement('details'); d.className='trow'; if(r.status==='fail'||r.status==='error') d.open=true;
+      var s=document.createElement('summary');
+      var b=document.createElement('span'); b.className='badge '+(r.status==='pass'?'b-ok':r.status==='skip'?'b-wait':'b-bad'); b.textContent=r.status==='pass'?'통과':r.status==='fail'?'실패':r.status==='error'?'오류':'건너뜀';
+      var id=document.createElement('span'); id.className='tid'; id.textContent=r.id;
+      s.appendChild(b); s.appendChild(id); d.appendChild(s);
+      if(r.msg){ var p=document.createElement('pre'); p.textContent=r.msg; d.appendChild(p); }
+      host.appendChild(d);
+    });
+  }
+
+  /* ---------- 파일 올리기 ---------- */
+  var TEXT_EXT=/\.(py|txt|md|json|csv|yaml|yml|toml|cfg|ini|sql|html|htm|js)$/i;
+  var SKIP=/(^|\/)(__pycache__|\.git|node_modules|__MACOSX|\.venv|venv)(\/|$)|\.pyc$|\.DS_Store$/;
+  function readText(f){ return new Promise(function(res){ var r=new FileReader(); r.onload=function(){ res(String(r.result||'')); }; r.onerror=function(){ res(null); }; r.readAsText(f); }); }
+  function readBytes(f){ return new Promise(function(res){ var r=new FileReader(); r.onload=function(){ res(r.result); }; r.onerror=function(){ res(null); }; r.readAsArrayBuffer(f); }); }
+  function notePy(s){ pyStatus(s); }
+  function mergeFiles(list){
+    var t=cur(), map={}; t.files.forEach(function(f){ map[f.path]=f; });
+    list.forEach(function(f){ map[f.path]=f; });
+    t.files=Object.keys(map).sort().map(function(k){ return map[k]; });
+    if(!t.sel||!map[t.sel]) t.sel=t.files[0]?t.files[0].path:'';
+    t.entry=bestEntry(t,true);
+  }
+  async function takeFiles(items){
+    // items: [{file, path}]
+    var t=cur(), got=[], skipped=0, web=null, zips=[];
+    var total=t.files.reduce(function(a,f){ return a+f.text.length; },0);
+    for(var i=0;i<items.length;i++){
+      var f=items[i].file, p=items[i].path||f.name;
+      if(SKIP.test(p)) continue;
+      if(/\.zip$/i.test(p)){ zips.push(f); continue; }
+      if(items.length===1&&/\.html?$/i.test(p)){ web=await readText(f); continue; }
+      if(!TEXT_EXT.test(p)||f.size>400000){ skipped++; continue; }
+      if(total+f.size>3000000){ skipped++; continue; }
+      var tx=await readText(f); if(tx==null){ skipped++; continue; }
+      total+=tx.length; got.push({path:p,text:tx});
+    }
+    if(web!=null){
+      t.mode='web'; t.code=web; if(!t.name||/^새 테스트/.test(t.name)) t.name=items[0].file.name.replace(/\.[^.]+$/,'');
+      save(); loadCur(); runWeb(); return;
+    }
+    if(t.mode!=='py'){ t.mode='py'; }
+    if(got.length) mergeFiles(got);
+    for(var z=0;z<zips.length;z++){
+      notePy('zip을 푸는 중 (파이썬 실행기를 먼저 불러와요)'); showPyStage();
+      try{
+        await ensurePy(); var bytes=await readBytes(zips[z]);
+        var m=await pyCall({t:'unpack',bytes:bytes});
+        mergeFiles(m.files||[]);
+      }catch(err){ notePy('zip을 열지 못했어요: '+err.message); }
+    }
+    if(skipped) notePy(skipped+'개 파일은 건너뛰었어요 (글자가 아닌 파일이거나 400KB 초과)');
+    if(!t.name||/^새 테스트/.test(t.name)){ var first=items[0]&&items[0].path; t.name=(first&&first.split('/')[0])||'파이썬 프로젝트'; }
+    save(); loadCur();
+  }
+  $('file').addEventListener('change',function(){ var fs=[].slice.call($('file').files); $('file').value=''; takeFiles(fs.map(function(f){ return {file:f,path:f.name}; })); });
+  $('pyFile').addEventListener('change',function(){ var fs=[].slice.call($('pyFile').files); $('pyFile').value=''; takeFiles(fs.map(function(f){ return {file:f,path:f.name}; })); });
+  $('pyDir').addEventListener('change',function(){
+    var fs=[].slice.call($('pyDir').files); $('pyDir').value='';
+    takeFiles(fs.map(function(f){ var p=f.webkitRelativePath||f.name; var parts=p.split('/'); if(parts.length>1) parts.shift(); return {file:f,path:parts.join('/')}; }));
+  });
+  function entryFiles(entry,prefix){
+    return new Promise(function(res){
+      if(entry.isFile){ entry.file(function(f){ res([{file:f,path:prefix+entry.name}]); },function(){ res([]); }); }
+      else if(entry.isDirectory){
+        var out=[],rd=entry.createReader();
+        (function more(){ rd.readEntries(function(es){ if(!es.length){ res(out); return; } Promise.all(es.map(function(x){ return entryFiles(x,prefix+entry.name+'/'); })).then(function(a){ a.forEach(function(l){ out=out.concat(l); }); more(); }); },function(){ res(out); }); })();
+      } else res([]);
+    });
+  }
+  async function dropped(dt){
+    var items=[];
+    if(dt.items&&dt.items.length&&dt.items[0].webkitGetAsEntry){
+      var ents=[].slice.call(dt.items).map(function(i){ return i.webkitGetAsEntry(); }).filter(Boolean);
+      var lists=await Promise.all(ents.map(function(e){ return entryFiles(e,''); }));
+      lists.forEach(function(l,i){ l.forEach(function(x){
+        var p=x.path; if(ents.length===1&&ents[0].isDirectory){ var parts=p.split('/'); parts.shift(); p=parts.join('/'); }
+        items.push({file:x.file,path:p});
+      }); });
+    } else items=[].slice.call(dt.files).map(function(f){ return {file:f,path:f.name}; });
+    if(items.length) takeFiles(items);
+  }
+  [['code'],['pyCode'],['drop']].forEach(function(a){
+    var el=$(a[0]);
+    ['dragenter','dragover'].forEach(function(n){ el.addEventListener(n,function(e){ e.preventDefault(); el.classList.add('drag'); }); });
+    ['dragleave','drop'].forEach(function(n){ el.addEventListener(n,function(e){ e.preventDefault(); el.classList.remove('drag'); if(n==='drop'&&e.dataTransfer) dropped(e.dataTransfer); }); });
   });
 
-  loadCur(true);
+  /* ---------- 파일 목록 / 실행 대상 ---------- */
+  function isTestPath(p){ return /(^|\/)test[^/]*\.py$/i.test(p)||/(^|\/)tests?\//i.test(p); }
+  function pyOptions(t){
+    var opts=[]; var tests=t.files.filter(function(f){ return /(^|\/)test[^/]*\.py$/i.test(f.path); });
+    opts.push({v:'tests',l:'테스트 실행 (unittest)'+(tests.length?' · 파일 '+tests.length+'개':' · 테스트 파일 없음')});
+    var pk={}; t.files.forEach(function(f){ var m=/^([^/]+)\/__main__\.py$/.exec(f.path); if(m) pk[m[1]]=1; });
+    Object.keys(pk).forEach(function(k){ opts.push({v:'module:'+k,l:'패키지 실행: python -m '+k}); });
+    t.files.forEach(function(f){ if(/\.py$/.test(f.path)&&!isTestPath(f.path)&&!/__init__\.py$|__main__\.py$/.test(f.path)) opts.push({v:'file:'+f.path,l:'파일 실행: '+f.path}); });
+    return opts;
+  }
+  function bestEntry(t,force){
+    var opts=pyOptions(t), have=opts.some(function(o){ return o.v===t.entry; });
+    if(have&&!force) return t.entry;
+    var tests=t.files.some(function(f){ return /(^|\/)test[^/]*\.py$/i.test(f.path); });
+    if(tests) return 'tests';
+    var o=opts.filter(function(x){ return x.v!=='tests'; })[0]; return o?o.v:'tests';
+  }
+  function renderFiles(){
+    var t=cur(), host=$('files'); host.textContent='';
+    $('fileCount').textContent='('+t.files.length+'개)';
+    if(!t.files.length){ var p=document.createElement('p'); p.className='empty'; p.style.padding='6px 8px'; p.textContent='아직 파일이 없어요.'; host.appendChild(p); }
+    t.files.forEach(function(f){
+      var row=document.createElement('div'); row.className='frow'; row.setAttribute('role','listitem');
+      var b=document.createElement('button'); b.type='button'; b.className='pick'; b.textContent=f.path; b.title=f.path; b.setAttribute('aria-pressed',f.path===t.sel?'true':'false');
+      b.addEventListener('click',function(){ t.sel=f.path; save(); renderFiles(); showSel(); });
+      var d=document.createElement('button'); d.type='button'; d.className='small'; d.textContent='삭제'; d.setAttribute('aria-label',f.path+' 삭제');
+      d.addEventListener('click',function(){ t.files=t.files.filter(function(x){ return x!==f; }); if(t.sel===f.path) t.sel=t.files[0]?t.files[0].path:''; t.entry=bestEntry(t,false); save(); renderFiles(); renderEntry(); showSel(); renderSuggest(); });
+      row.appendChild(b); row.appendChild(d); host.appendChild(row);
+    });
+    renderEntry();
+  }
+  function renderEntry(){
+    var t=cur(), sel=$('entry'); sel.textContent='';
+    pyOptions(t).forEach(function(o){ var op=document.createElement('option'); op.value=o.v; op.textContent=o.l; sel.appendChild(op); });
+    t.entry=bestEntry(t,false); sel.value=t.entry;
+  }
+  function showSel(){
+    var t=cur(), f=t.files.filter(function(x){ return x.path===t.sel; })[0];
+    $('pyCode').value=f?f.text:''; $('pyCode').disabled=!f;
+    $('pyCodeLabel').textContent=f?'선택한 파일: '+f.path+' (직접 고칠 수 있어요)':'선택한 파일 내용';
+  }
+  $('pyCode').addEventListener('input',function(){ var t=cur(), f=t.files.filter(function(x){ return x.path===t.sel; })[0]; if(f){ f.text=$('pyCode').value; save(); } });
+  $('entry').addEventListener('change',function(){ cur().entry=$('entry').value; save(); });
+  $('args').addEventListener('input',function(){ cur().args=$('args').value; save(); });
+  $('stdin').addEventListener('input',function(){ cur().stdin=$('stdin').value; save(); });
+  $('addFile').addEventListener('click',function(){
+    var p=$('newFile').value.trim().replace(/\\/g,'/').replace(/^\/+/,''); if(!p||p.split('/').some(function(x){ return x==='..'; })) return;
+    var t=cur(); if(!t.files.some(function(f){ return f.path===p; })) t.files.push({path:p,text:''}); t.files.sort(function(a,b){ return a.path<b.path?-1:1; });
+    t.sel=p; $('newFile').value=''; t.entry=bestEntry(t,false); save(); renderFiles(); showSel(); $('pyCode').focus();
+  });
+  $('pySample').addEventListener('click',function(){
+    var t=mk('예시: 장바구니 계산 (파이썬)','py'); t.files=SAMPLE_PY.map(function(f){ return {path:f.path,text:f.text}; }); t.sel='shop/cart.py'; t.entry='tests';
+    S.tests.push(t); S.cur=t.id; save(); loadCur(); runPy();
+  });
+
+  /* ---------- 코드에서 뽑은 확인 항목 ---------- */
+  var WEB_RULES=[
+    [/localStorage|sessionStorage|indexedDB/i,'s:store','새로고침한 뒤에도 입력한 내용이 남는지','코드가 브라우저 저장소를 써요. 이 실험실에서는 저장이 임시로만 되니, 실제 주소에서 한 번 더 확인하세요.'],
+    [/fetch\(|XMLHttpRequest|WebSocket|axios/i,'s:net','서버와 주고받는 기능이 실제 서버에서 동작하는지','외부 요청이 있어요. 이 실험실은 기본으로 외부 요청을 막아 둬요 (위의 "외부 요청 허용"으로 켤 수 있어요).'],
+    [/<form|<input|<textarea|<select/i,'s:input','빈 칸으로 제출하거나 아주 긴 글, 특수문자를 넣었을 때 결과가 올바른지','입력 칸이 있어요. 자동 탐색이 엉뚱한 값을 넣어 보지만, 결과가 맞는지는 직접 봐야 해요.'],
+    [/type=["']?file/i,'s:file','파일을 골랐을 때 동작','파일 선택이 있어요. 이 실험실에서 동작하는지 직접 확인하세요.'],
+    [/\balert\(|\bconfirm\(|\bprompt\(/i,'s:dialog','알림·확인 창이 뜨는 흐름','대화상자를 써요. 자동 탐색 중에는 자동으로 닫히니 직접도 한 번 해 보세요.'],
+    [/geolocation|getUserMedia|mediaDevices|Notification\b|navigator\.share|navigator\.clipboard/i,'s:device','카메라·위치·알림·공유 같은 기기 기능','이 실험실 화면에서는 막혀 있어요. 실제 폰에서 허용했을 때의 동작을 확인하세요.'],
+    [/setInterval|setTimeout|new Date|Date\.now/i,'s:time','시간이 지나거나 날짜가 바뀔 때의 동작','시간에 따라 달라지는 코드가 있어요. 오래 켜 둔 뒤나 자정 전후 상태를 확인하세요.'],
+    [/requestAnimationFrame|<canvas/i,'s:anim','끊김 없이 움직이는지, 탭을 벗어났다 돌아와도 정상인지','애니메이션이나 캔버스가 있어요.'],
+    [/keydown|keyup|keypress/i,'s:key','키보드로 조작했을 때','키보드 이벤트를 써요. 자동 탐색이 일부 키를 눌러 보지만 의도한 조작은 직접 확인하세요.'],
+    [/touchstart|touchmove|touchend|pointerdown/i,'s:touch','실제 폰에서 터치로 조작했을 때 (스크롤과 겹치지 않는지)','터치 이벤트를 써요. 데스크톱 브라우저에서는 완전히 확인되지 않아요.'],
+    [/toUpperCase|toLowerCase|parseInt|parseFloat|Math\.round|toFixed/i,'s:calc','계산·변환 결과가 맞는지 (경계값, 빈 값, 음수)','값을 계산하거나 변환하는 코드가 있어요. 화면에 보이는 숫자와 글자를 직접 검산해 보세요.']
+  ];
+  var PY_RULES=[
+    [/urllib|requests|http\.client|socket|aiohttp|httpx/,'p:net','네트워크를 쓰는 부분을 가짜 응답으로 바꾼 테스트로 확인','브라우저 안에서는 서버 연결이 안 돼요. 테스트가 가짜(Fake) 응답을 쓰는지 확인하세요.'],
+    [/os\.environ|getenv|dotenv/,'p:env','필요한 환경 변수(API 키 등)가 빠졌을 때 오류 메시지','환경 변수는 이 실험실에서 비어 있어요.'],
+    [/fcntl|subprocess|multiprocessing|threading|signal\./,'p:os','운영체제 기능(파일 잠금, 프로세스, 스레드)은 실제 서버에서','브라우저용 파이썬에서는 일부가 제한돼요.'],
+    [/sqlite3|open\(|Path\(/,'p:file','파일·DB 저장은 실제 디스크에서','이 실험실의 파일은 실행 중에만 있고 사라져요.'],
+    [/datetime\.now|time\.time|zoneinfo|utcnow|date\.today/,'p:time','현재 시각에 따라 달라지는 동작(경계 시간)','시간에 따라 결과가 달라지는 코드가 있어요.'],
+    [/\binput\(/,'p:stdin','입력을 받는 흐름','"인자와 입력" 칸에 값을 넣고 실행해 보세요.']
+  ];
+  function suggestions(t){
+    var out=[];
+    if(t.mode==='web'){
+      var c=t.code||''; if(!c.trim()) return out;
+      WEB_RULES.forEach(function(r){ if(r[0].test(c)) out.push({key:r[1],t:r[2],why:r[3]}); });
+    } else {
+      var src=t.files.map(function(f){ return f.text; }).join('\n'); if(!t.files.length) return out;
+      if(!t.files.some(function(f){ return /(^|\/)test[^/]*\.py$/i.test(f.path); })) out.push({key:'p:notest',t:'핵심 기능을 확인하는 테스트 파일(test_*.py) 만들기',why:'테스트 파일이 없어요. 가장 중요한 함수 몇 개부터 경계값(0, 빈 값, 음수)으로 테스트를 추가하면 좋아요.'});
+      PY_RULES.forEach(function(r){ if(r[0].test(src)) out.push({key:r[1],t:r[2],why:r[3]}); });
+    }
+    return out;
+  }
+
+  /* ---------- 자동 점검 항목 ---------- */
+  function autoItems(t){
+    var a=[];
+    if(t.mode==='web'){
+      if(R.empty||!(t.code||'').trim()) return [{key:'a:none',st:'wait',t:'코드를 넣고 실행하면 자동 점검이 시작돼요',why:''}];
+      var errs=R.events.filter(function(e){ return e.t==='error'||e.t==='console-error'; }); var errN=(R.counts.error||0)+(R.counts['console-error']||0);
+      if(R.noSignal) a.push({key:'a:load',st:'bad',t:'화면에서 신호가 오지 않았어요',why:'3초 안에 실행 화면의 감시 신호를 받지 못했어요. 코드가 비었거나, 화면을 불러오지 못했거나, 감시 코드가 막혔을 수 있어요.'});
+      else if(!R.ready) a.push({key:'a:load',st:'wait',t:'실행 화면을 불러오는 중',why:''});
+      else if(errs.length) a.push({key:'a:load',st:'bad',t:'실행 중 오류 '+errN+'건 (서로 다른 오류 '+errs.length+'종류)',why:'첫 오류: '+errs[0].m});
+      else a.push({key:'a:load',st:'ok',t:'화면을 불러왔고 오류 신호가 없어요',why:R.loaded?'로드 완료 신호를 받았고, 감시를 시작한 뒤 오류가 감지되지 않았어요.':'아직 로드 중일 수 있어요.'});
+      var s=R.stat;
+      if(s){
+        a.push({key:'a:over',st:s.over?'warn':'ok',t:s.over?'가로 스크롤이 생겨요 (화면 '+s.w+'px, 내용 '+s.sw+'px)':'가로 넘침 없음 (화면 '+s.w+'px)',why:s.over?'내용이 화면보다 넓어요. 크기 버튼으로 다른 폭에서도 확인하세요.':'지금 고른 폭에서만 확인한 결과예요. 다른 폭에서도 눌러 보세요.'});
+        if(!s.viewport) a.push({key:'a:vp',st:'warn',t:'viewport 설정이 없어요',why:'<meta name="viewport"> 가 없으면 폰에서 글자가 아주 작게 보일 수 있어요.'});
+        var bad=[]; if(s.btnNoName) bad.push('이름 없는 버튼 '+s.btnNoName+'/'+s.btn); if(s.inpNoLabel) bad.push('라벨 없는 입력칸 '+s.inpNoLabel+'/'+s.inp); if(s.imgNoAlt) bad.push('alt 없는 이미지 '+s.imgNoAlt+'/'+s.img); if(!s.lang) bad.push('lang 속성 없음');
+        a.push({key:'a:a11y',st:bad.length?'warn':'ok',t:bad.length?'접근성 기본 점검: '+bad.join(', '):'접근성 기본 점검: 문제 없음',why:'버튼·입력칸·이미지에 이름이 있는지만 본 간단한 점검이에요. 색 대비와 스크린리더는 확인하지 않아요.'});
+      }
+      var sm=R.smoke;
+      if(R.smokeRunning) a.push({key:'a:smoke',st:'wait',t:'자동 탐색 중…',why:'버튼, 입력칸, 링크를 무작위로 눌러 보고 있어요.'});
+      else if(!sm) a.push({key:'a:smoke',st:'wait',t:'자동 탐색을 아직 하지 않았어요',why:'오른쪽 위 "자동 탐색 실행"을 누르면 보이는 버튼, 입력칸, 링크를 무작위로 눌러 보고 오류가 나는지 확인해요.'});
+      else if(!sm.seen) a.push({key:'a:smoke',st:'warn',t:'눌러 볼 수 있는 요소를 찾지 못했어요',why:'버튼이나 입력칸이 없는 화면이거나, 클릭이 아닌 방식(키보드·드래그)으로만 조작하는 화면일 수 있어요.'});
+      else a.push({key:'a:smoke',st:sm.errors?'bad':'ok',t:'자동 탐색 '+sm.steps+'단계 · 요소 '+sm.seen+'개 · 오류 '+sm.errors+'건',why:'무작위로 눌러 보는 방식이라 모든 경로를 보장하지 않아요 (시드 '+sm.seed+'). 키보드 입력 '+sm.keys+'회'+(sm.alerts?', 알림창 '+sm.alerts+'회 자동 처리':'')+'. 다시 실행하면 다른 순서로 눌러 봐요.'});
+      if(sm&&sm.seen){
+        var dead=sm.controls.filter(function(c){ return c.n>=1&&c.react===0&&!/^(input|textarea|select)/.test(c.label); });
+        if(dead.length) a.push({key:'a:dead',st:'warn',t:'눌러도 화면이 안 바뀐 요소 '+dead.length+'개',why:dead.slice(0,6).map(function(c){ return c.label; }).join(' · ')+(dead.length>6?' 외':'')+' — 화면 대신 저장이나 계산만 하는 것일 수도 있어서 직접 확인이 필요해요.'});
+      }
+    } else {
+      var p=R.py;
+      if(R.pyBusy) return [{key:'a:py',st:'wait',t:'실행 중…',why:''}];
+      if(!p) return [{key:'a:py',st:'wait',t:'파이썬 코드를 실행하면 결과가 여기에 정리돼요',why:'위 "실행"을 누르세요.'}];
+      if(p.kind==='fatal') a.push({key:'a:py',st:'bad',t:'실행하지 못했어요',why:p.data.text});
+      else if(p.kind==='tests'){
+        var rows=p.data.rows||[], pass=rows.filter(function(r){ return r.status==='pass'; }).length, fail=rows.filter(function(r){ return r.status==='fail'||r.status==='error'; });
+        if(!rows.length) a.push({key:'a:py',st:'warn',t:'테스트를 하나도 찾지 못했어요',why:'tests/ 폴더나 test_*.py 파일이 있는지, 폴더 구조가 맞는지 확인하세요.'});
+        else a.push({key:'a:py',st:fail.length?'bad':'ok',t:'테스트 '+rows.length+'개 중 '+pass+'개 통과'+(fail.length?', '+fail.length+'개 실패·오류':''),why:fail.length?'실패: '+fail.slice(0,4).map(function(r){ return r.id.split('.').slice(-2).join('.'); }).join(' · ')+(fail.length>4?' 외':''):'통과한 테스트가 이 코드의 모든 경우를 다룬다는 뜻은 아니에요.'});
+        var skipped=rows.filter(function(r){ return r.status==='skip'; }).length; if(skipped) a.push({key:'a:skip',st:'warn',t:'건너뛴 테스트 '+skipped+'개',why:'조건이 맞지 않아 실행되지 않았어요.'});
+      } else {
+        a.push({key:'a:py',st:p.data.exit===0?'ok':'bad',t:p.data.exit===0?'정상 종료 (종료 코드 0)':'오류로 종료 (종료 코드 '+p.data.exit+')',why:p.data.exit===0?'출력은 실행 화면에서 확인하세요. 정상 종료가 결과가 맞다는 뜻은 아니에요.':'실행 화면의 빨간 글자(오류 내용)를 확인하세요.'});
+      }
+    }
+    return a;
+  }
+  var BADGE={ok:['b-ok','통과'],warn:['b-warn','주의'],bad:['b-bad','문제'],wait:['b-wait','대기']};
+  function renderAuto(){
+    var host=$('listAuto'); host.textContent='';
+    autoItems(cur()).forEach(function(it){
+      var row=document.createElement('div'); row.className='item';
+      var h=document.createElement('div'); h.className='ih';
+      var b=document.createElement('span'); b.className='badge '+BADGE[it.st][0]; b.textContent=BADGE[it.st][1];
+      var p=document.createElement('p'); p.textContent=it.t; h.appendChild(b); h.appendChild(p); row.appendChild(h);
+      if(it.why){ var w=document.createElement('p'); w.className='why'; w.textContent=it.why; row.appendChild(w); }
+      host.appendChild(row);
+    });
+    $('smokeBtn').hidden=cur().mode!=='web';
+  }
+
+  /* ---------- 점검 목록(직접 확인) ---------- */
+  function get(t,k){ return t.items[k]||{s:'none',n:''}; }
+  function buildManual(host,list,opt){
+    host.textContent='';
+    if(!list.length){ var e=document.createElement('p'); e.className='empty'; e.textContent=opt.empty; host.appendChild(e); return; }
+    var t=cur();
+    list.forEach(function(it){
+      var row=document.createElement('div'); row.className='item';
+      var p=document.createElement('p'); p.textContent=it.t; row.appendChild(p);
+      if(it.why){ var w=document.createElement('p'); w.className='why'; w.textContent=it.why; row.appendChild(w); }
+      var st=document.createElement('div'); st.className='state'; st.setAttribute('role','group'); st.setAttribute('aria-label',it.t);
+      [['none','미확인'],['ok','잘 됨'],['bad','문제']].forEach(function(o){
+        var b=document.createElement('button'); b.type='button'; b.setAttribute('data-s',o[0]); b.textContent=o[1];
+        b.setAttribute('aria-pressed',get(t,it.key).s===o[0]?'true':'false');
+        b.addEventListener('click',function(){ var c=get(t,it.key); c.s=o[0]; t.items[it.key]=c; save(); st.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed',x===b?'true':'false'); }); renderTally(); });
+        st.appendChild(b);
+      });
+      if(opt.del){ var d=document.createElement('button'); d.type='button'; d.className='small'; d.textContent='항목 삭제'; d.addEventListener('click',function(){ t.custom=t.custom.filter(function(x){ return 'c:'+x.id!==it.key; }); delete t.items[it.key]; save(); renderCustom(); renderTally(); }); st.appendChild(d); }
+      row.appendChild(st);
+      var inp=document.createElement('input'); inp.type='text'; inp.placeholder='메모'; inp.value=get(t,it.key).n||''; inp.setAttribute('aria-label','메모: '+it.t);
+      inp.addEventListener('input',function(){ var c=get(t,it.key); c.n=inp.value; t.items[it.key]=c; save(); });
+      row.appendChild(inp); host.appendChild(row);
+    });
+  }
+  function renderSuggest(){ buildManual($('listSuggest'),suggestions(cur()),{empty:'코드를 넣고 실행하면, 코드 내용에 맞춘 확인 항목이 여기에 나와요.'}); }
+  function renderCustom(){ buildManual($('listCustom'),(cur().custom||[]).map(function(c){ return {key:'c:'+c.id,t:c.t}; }),{empty:'직접 확인하고 싶은 항목을 아래에서 추가하세요.',del:true}); }
+  function addCustom(){
+    var v=$('addText').value.trim(); if(!v) return; var t=cur(); t.custom=t.custom||[]; t.custom.push({id:uid(),t:v}); $('addText').value=''; save(); renderCustom(); renderTally();
+  }
+  $('addBtn').addEventListener('click',addCustom);
+  $('addText').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); addCustom(); } });
+  $('memo').addEventListener('input',function(){ cur().memo=$('memo').value; save(); });
+  function renderTally(){
+    var t=cur(), c={ok:0,warn:0,bad:0,none:0};
+    autoItems(t).forEach(function(it){ if(it.st==='wait') return; c[it.st]++; });
+    suggestions(t).forEach(function(it){ c[get(t,it.key).s]++; });
+    (t.custom||[]).forEach(function(it){ c[get(t,'c:'+it.id).s]++; });
+    $('tally').innerHTML='<span class="pill ok">잘 됨 '+c.ok+'</span><span class="pill warn">주의 '+c.warn+'</span><span class="pill bad">문제 '+c.bad+'</span><span class="pill none">미확인 '+c.none+'</span>';
+  }
+
+  /* ---------- 실행 기록 ---------- */
+  var TAG={error:['b-bad','오류'],'console-error':['b-bad','console.error'],resource:['b-warn','불러오기 실패'],blocked:['b-warn','차단'],warn:['b-warn','경고'],log:['b-wait','log'],note:['b-wait','안내']};
+  var WATCH_WEB='이 실행 화면 안에서 일어나는 자바스크립트 예외, 처리되지 않은 Promise 거부, console.error, 이미지·스크립트 같은 불러오기 실패, 보안 정책에 의한 차단을 봐요. "오류 0건"은 이런 신호가 없었다는 뜻일 뿐이에요. 계산 결과가 틀리거나 화면이 어긋나는 문제, 일부러 막아 둔 외부 요청이 필요한 기능은 알 수 없어요. 그런 건 아래 점검 목록과 자동 탐색, 직접 확인으로 봐야 해요.';
+  var WATCH_PY='파이썬이 던지는 예외와 표준 출력·오류 출력, 테스트 통과·실패를 봐요. 정상 종료는 결과가 맞다는 뜻이 아니에요. 네트워크, 일부 운영체제 기능은 브라우저 안에서 동작하지 않아요.';
+  function renderLog(){
+    var t=cur(), st=$('logStatus'), ul=$('evs'); ul.textContent=''; $('watchText').textContent=t.mode==='web'?WATCH_WEB:WATCH_PY;
+    var evs=R.events;
+    if(t.mode==='web'){
+      var errs=(R.counts.error||0)+(R.counts['console-error']||0);
+      var warns=(R.counts.warn||0)+(R.counts.resource||0)+(R.counts.blocked||0);
+      if(R.empty||(!R.started&&!R.ready)){ st.className='status b-wait'; st.textContent='아직 실행하지 않았어요. 코드를 넣고 실행을 누르세요.'; }
+      else if(R.noSignal){ st.className='status b-bad'; st.textContent='실행 화면에서 신호가 오지 않았어요. 오류가 없다는 뜻이 아니라, 감시가 시작되지 않은 거예요. 코드가 비었거나 화면을 불러오지 못했을 수 있어요.'; }
+      else if(!R.ready){ st.className='status b-wait'; st.textContent='실행 중… 화면의 신호를 기다리고 있어요.'; }
+      else{
+        st.className='status '+(errs?'b-bad':warns?'b-warn':'b-ok'); st.textContent='';
+        var b=document.createElement('b'); b.textContent=(errs?'오류 '+errs+'건':'감지된 오류 0건')+(warns?' · 경고·차단 '+warns+'건':''); st.appendChild(b);
+        var s2=document.createElement('span'); s2.textContent='감시 신호를 받고 있어요'+(R.loaded?' · 화면 로드 완료':' · 로드 중')+'. '+(errs?'':'이 감시는 자바스크립트 예외 등만 잡아요. 계산 결과나 화면 어긋남은 아래 점검으로 확인하세요.'); st.appendChild(s2);
+      }
+    } else {
+      st.className='status '+(R.pyBusy?'b-wait':R.py&&(R.py.kind==='fatal'||(R.py.kind==='run'&&R.py.data.exit!==0))?'b-bad':R.py?'b-ok':'b-wait');
+      st.textContent=R.pyBusy?(R.pyStatus||'실행 중…'):R.py?(R.py.kind==='tests'?'테스트 실행이 끝났어요. 결과는 실행 화면에서 확인하세요.':R.py.kind==='fatal'?'실행하지 못했어요. '+R.py.data.text.split('\n')[0]:'실행이 끝났어요 (종료 코드 '+R.py.data.exit+').'):'아직 실행하지 않았어요. 위 "실행"을 누르세요.';
+    }
+    if(!evs.length){ var li=document.createElement('li'); li.className='note'; li.textContent=t.mode==='web'?'기록된 이벤트가 없어요.':'특이 사항이 없어요.'; ul.appendChild(li); return; }
+    evs.slice(-60).forEach(function(e){
+      var li=document.createElement('li'); var tm=document.createElement('span'); tm.className='tm'; tm.textContent='+'+(e.at/1000).toFixed(1)+'s';
+      var tg=document.createElement('span'); var tag=TAG[e.t]||['b-wait',e.t]; tg.className='tg '+tag[0]; tg.textContent=tag[1];
+      var m=document.createElement('span'); m.textContent=e.m+(e.n>1?'  ×'+e.n:''); li.appendChild(tm); li.appendChild(tg); li.appendChild(m); ul.appendChild(li);
+    });
+  }
+
+  /* ---------- 메모 만들기 ---------- */
+  $('copy').addEventListener('click',function(){
+    var t=cur(), L=['[코드 실험실 테스트 메모] '+(t.name||'이름 없음')+' ('+(t.mode==='web'?'웹':'파이썬')+')',''];
+    L.push('자동 점검');
+    autoItems(t).forEach(function(it){ L.push('- ['+BADGE[it.st][1]+'] '+it.t+(it.why?' / '+it.why:'')); });
+    var ev=R.events.filter(function(e){ return e.t==='error'||e.t==='console-error'; }).slice(0,8);
+    if(ev.length){ L.push('','감지된 오류'); ev.forEach(function(e){ L.push('  - '+e.m); }); }
+    var all=suggestions(t).map(function(s){ return {key:s.key,t:s.t}; }).concat((t.custom||[]).map(function(c){ return {key:'c:'+c.id,t:c.t}; }));
+    if(all.length){ L.push('','직접 확인'); var lab={ok:'잘 됨',bad:'문제',none:'미확인'}; all.forEach(function(it){ var c=get(t,it.key); L.push('- ['+lab[c.s]+'] '+it.t+(c.n?' / 메모: '+c.n:'')); }); }
+    if(t.memo) L.push('','전체 메모:',t.memo);
+    var text=L.join('\n'), out=$('handoff'); out.hidden=false; out.value=text; var msg=$('copyMsg');
+    function fb(){ out.focus(); out.select(); msg.textContent='복사가 막혀 있어요. 아래 글을 직접 선택해 복사하세요.'; }
+    try{ navigator.clipboard.writeText(text).then(function(){ msg.textContent='복사했어요.'; },fb); }catch(e){ fb(); }
+  });
+
+  /* ---------- 테스트 선택·추가·삭제 ---------- */
+  function renderSel(){
+    var sel=$('testSel'); sel.textContent='';
+    S.tests.forEach(function(t){ var o=document.createElement('option'); o.value=t.id; o.textContent=(t.mode==='py'?'[파이썬] ':'[웹] ')+(t.name||'이름 없음'); if(t.id===S.cur) o.selected=true; sel.appendChild(o); });
+  }
+  function showMode(){
+    var t=cur(), py=t.mode==='py';
+    $('modeWeb').setAttribute('aria-pressed',py?'false':'true'); $('modePy').setAttribute('aria-pressed',py?'true':'false');
+    $('webIn').hidden=py; $('pyIn').hidden=!py;
+    $('webStage').hidden=py; $('pyStage').hidden=!py; $('webTools').hidden=py; $('pyTools').hidden=!py; $('sizeNote').hidden=py;
+    $('limits').textContent=py?'파이썬은 이 브라우저 안에서 실행돼요 (Pyodide). 처음 한 번 실행기를 내려받느라 수십 초 걸릴 수 있고, 인터넷 연결이 필요해요. 네트워크 접속, 일부 운영체제 기능, 설치되지 않은 패키지는 동작하지 않아요. 출처를 모르는 코드는 넣지 마세요.':'코드는 이 브라우저 안의 격리된 화면에서만 실행됩니다. 출처를 모르는 코드는 넣지 마세요. 서버 연결, API 키, 여러 파일로 나뉜 웹 프로젝트는 확인할 수 없어요.';
+    $('sizeNote').hidden=py;
+  }
+  function showPyStage(){ var t=cur(); if(t.mode==='py'){ $('webStage').hidden=true; $('pyStage').hidden=false; } }
+  function loadCur(){
+    var t=cur();
+    $('tname').value=t.name; $('code').value=t.code||''; $('memo').value=t.memo||''; $('args').value=t.args||''; $('stdin').value=t.stdin||'';
+    $('handoff').hidden=true; $('copyMsg').textContent='';
+    renderSel(); showMode(); renderFiles(); showSel(); renderSuggest(); renderCustom(); renderAuto(); renderLog(); renderTally();
+    if(t.mode==='web') layoutStage();
+  }
+  function renderAll(){ renderLog(); renderAuto(); renderTally(); }
+  function reset(){ R.events=[]; R.counts={}; R.ready=false; R.loaded=false; R.noSignal=false; R.stat=null; R.smoke=null; R.smokeRunning=false; R.py=null; R.empty=false; R.started=0; pyLines=[]; renderPyOut(); $('pyTests').textContent=''; pyStatus(''); $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 실행'; clearTimeout(sigTimer); }
+  function switchTo(id){ if(pw&&R.pyBusy) stopPy(); S.cur=id; save(); armed=false; $('delTest').textContent='삭제'; $('delTest').classList.remove('warnbtn'); reset(); loadCur(); if(cur().mode==='web') runWeb(); }
+  $('testSel').addEventListener('change',function(){ switchTo($('testSel').value); });
+  $('newTest').addEventListener('click',function(){ var t=mk('새 테스트',cur().mode); S.tests.push(t); switchTo(t.id); (t.mode==='web'?$('code'):$('newFile')).focus(); });
+  var armed=false,armTimer=null;
+  $('delTest').addEventListener('click',function(){
+    var b=$('delTest');
+    if(!armed){ armed=true; b.textContent='정말 삭제'; b.classList.add('warnbtn'); armTimer=setTimeout(function(){ armed=false; b.textContent='삭제'; b.classList.remove('warnbtn'); },4000); return; }
+    clearTimeout(armTimer); S.tests=S.tests.filter(function(t){ return t.id!==S.cur; });
+    if(!S.tests.length) S.tests=[mk('새 테스트','web')];
+    switchTo(S.tests[0].id);
+  });
+  $('tname').addEventListener('input',function(){ cur().name=$('tname').value; save(); renderSel(); });
+  $('code').addEventListener('input',function(){ cur().code=$('code').value; save(); renderSuggest(); renderTally(); });
+  $('modeWeb').addEventListener('click',function(){ var t=cur(); if(t.mode==='web') return; t.mode='web'; save(); reset(); loadCur(); });
+  $('modePy').addEventListener('click',function(){ var t=cur(); if(t.mode==='py') return; t.mode='py'; save(); reset(); loadCur(); });
+  $('run').addEventListener('click',runWeb);
+  $('pyRun').addEventListener('click',runPy);
+  $('sample').addEventListener('click',function(){ var t=mk('예시: 할 일 목록','web'); t.code=SAMPLE_WEB; S.tests.push(t); switchTo(t.id); });
+  $('net').checked=!!S.net;
+  $('net').addEventListener('change',function(){ S.net=$('net').checked; save(); runWeb(); });
+
+  /* 시작 */
+  loadCur(); if(cur().mode==='web') runWeb();
+  if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0){ window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }
+  window.__lab={S:S,R:function(){return R;}}; window.__take=takeFiles;
 })();
-</script>
-<script>
-if ('serviceWorker' in navigator) { window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }
 </script>
 </body>
 </html>
