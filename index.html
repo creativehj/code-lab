@@ -159,6 +159,7 @@ details.how summary{cursor:pointer;color:var(--ink)}
       <p class="sub" id="sizeNote" aria-live="polite"></p>
       <div id="webStage" class="stagewrap"><div class="fbox" id="fbox"><iframe id="stage" title="실행 화면" sandbox="allow-scripts allow-forms allow-modals"></iframe></div></div>
       <div id="pyStage" hidden>
+        <div class="status b-wait" id="kindCard"></div>
         <div class="pystatus" id="pyStatus" aria-live="polite"></div>
         <div id="pyTests"></div>
         <pre class="term" id="pyOut" aria-label="파이썬 출력"></pre>
@@ -204,8 +205,9 @@ details.how summary{cursor:pointer;color:var(--ink)}
             <input type="text" id="newFile" placeholder="새 파일 경로 (예: pkg/util.py)" aria-label="새 파일 경로" style="flex:1 1 180px">
             <button type="button" id="addFile">파일 추가</button>
           </div>
+          <details class="how" id="codeDet" style="margin-top:8px"><summary>코드 내용 보기·고치기 (보지 않아도 실행돼요)</summary>
           <label class="l" for="pyCode" id="pyCodeLabel" style="display:block;margin-top:8px">선택한 파일 내용 (직접 고칠 수 있어요)</label>
-          <textarea id="pyCode" spellcheck="false" placeholder="파일을 고르면 내용이 보여요"></textarea>
+          <textarea id="pyCode" spellcheck="false" placeholder="파일을 고르면 내용이 보여요"></textarea></details>
           <label class="l" for="entry" style="display:block;margin-top:8px">실행할 것</label>
           <select id="entry"></select>
           <details class="how" style="margin-top:8px"><summary>인자와 입력(stdin)</summary>
@@ -732,6 +734,7 @@ function workerMain(){
     if(skipped) notePy(skipped+'개 파일은 건너뛰었어요 (글자가 아닌 파일이거나 400KB 초과)');
     if(!t.name||/^새 테스트/.test(t.name)){ var first=items[0]&&items[0].path; t.name=(first&&first.split('/')[0])||'파이썬 프로젝트'; }
     save(); loadCur();
+    if(cur()===t&&t.mode==='py'&&t.files.length&&(got.length||zips.length)&&!R.pyBusy) runPy();
   }
   $('file').addEventListener('change',function(){ var fs=[].slice.call($('file').files); $('file').value=''; takeFiles(fs.map(function(f){ return {file:f,path:f.name}; })); });
   $('pyFile').addEventListener('change',function(){ var fs=[].slice.call($('pyFile').files); $('pyFile').value=''; takeFiles(fs.map(function(f){ return {file:f,path:f.name}; })); });
@@ -765,6 +768,19 @@ function workerMain(){
     ['dragenter','dragover'].forEach(function(n){ el.addEventListener(n,function(e){ e.preventDefault(); el.classList.add('drag'); }); });
     ['dragleave','drop'].forEach(function(n){ el.addEventListener(n,function(e){ e.preventDefault(); el.classList.remove('drag'); if(n==='drop'&&e.dataTransfer) dropped(e.dataTransfer); }); });
   });
+
+  /* ---------- 이 코드가 화면이 있는 종류인지 ---------- */
+  function kindOf(t){
+    var src=t.files.map(function(f){ return f.text; }).join('\n');
+    if(!t.files.length) return {st:'b-wait',h:'파일을 올리면 이 코드가 어떤 종류인지 알려드려요',b:'파이썬 코드는 화면(UI)이 있는 것과 없는 것이 있어요. 화면이 없는 코드는 실행 결과(글자)와 테스트 통과 여부로 동작을 확인해요.'};
+    if(/(^|\n)\s*(from|import)\s+(streamlit|gradio|tkinter|PyQt\d?|PySide\d?|pygame|kivy|nicegui|flet)\b/.test(src))
+      return {st:'b-warn',h:'화면이 있는 파이썬 앱이에요, 하지만 여기서는 화면을 띄울 수 없어요',b:'Streamlit·Tkinter·pygame 같은 화면 도구는 서버나 컴퓨터 창이 필요해서 브라우저 안에서 못 열어요. 이런 건 실행 결과와 테스트만 볼 수 있어요. 화면까지 확인하려면 클로드·코덱스에게 "HTML 한 파일로 된 화면 버전"을 요청해서 웹 모드에 넣어 보세요.'};
+    if(/(^|\n)\s*(from|import)\s+(flask|fastapi|django|bottle|starlette|aiohttp|sanic)\b/.test(src))
+      return {st:'b-warn',h:'웹 서버 코드예요, 하지만 여기서는 서버를 켤 수 없어요',b:'브라우저 안에서는 서버를 열 수 없어서 화면(페이지)을 띄우지 못해요. 실행 결과와 테스트만 볼 수 있어요. 화면까지 확인하려면 클로드·코덱스에게 "HTML 한 파일로 된 화면 버전"을 요청해서 웹 모드에 넣어 보세요.'};
+    var cli=/argparse|sys\.argv|__main__/.test(src), tests=t.files.some(function(f){ return /(^|\/)test[^/]*\.py$/i.test(f.path); });
+    return {st:'b-ok',h:'화면이 없는 코드예요 ('+(cli?'명령줄 도구':'계산·처리 로직')+(tests?' + 자동 테스트':'')+')',b:'버튼이나 화면이 없어서 "어떻게 보이는지"는 없어요. 대신 아래에서 (1) 테스트가 통과하는지, (2) 실행했을 때 나오는 글자 결과를 확인해요. 파일을 올리면 자동으로 실행해요.'};
+  }
+  function renderKind(){ var k=kindOf(cur()), c=$('kindCard'); c.className='status '+k.st; c.textContent=''; var b=document.createElement('b'); b.textContent=k.h; var s2=document.createElement('span'); s2.textContent=k.b; c.appendChild(b); c.appendChild(s2); }
 
   /* ---------- 파일 목록 / 실행 대상 ---------- */
   function isTestPath(p){ return /(^|\/)test[^/]*\.py$/i.test(p)||/(^|\/)tests?\//i.test(p); }
@@ -1015,7 +1031,7 @@ function workerMain(){
     var t=cur();
     $('tname').value=t.name; $('code').value=t.code||''; $('memo').value=t.memo||''; $('args').value=t.args||''; $('stdin').value=t.stdin||'';
     $('handoff').hidden=true; $('copyMsg').textContent='';
-    renderSel(); showMode(); renderFiles(); showSel(); renderSuggest(); renderCustom(); renderAuto(); renderLog(); renderTally();
+    renderSel(); showMode(); renderFiles(); showSel(); renderKind(); renderSuggest(); renderCustom(); renderAuto(); renderLog(); renderTally();
     if(t.mode==='web') layoutStage();
   }
   function renderAll(){ renderLog(); renderAuto(); renderTally(); }
