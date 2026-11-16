@@ -104,6 +104,16 @@ label.l{font-size:13px;color:var(--muted)}
 .trow summary{cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .trow .tid{font-family:var(--font-mono);overflow-wrap:anywhere;min-width:0}
 .trow pre{margin:8px 0 0;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border-radius:6px;padding:8px}
+.flow{margin:6px 0 0;padding:8px;background:var(--bg);border-radius:6px;font-family:var(--font-mono);font-size:12px;line-height:1.55;max-height:360px;overflow:auto}
+.flow .fl{overflow-wrap:anywhere}
+.flow .fn{font-weight:600}.flow .fl.test .fn{color:var(--accent)}
+.flow .fa{color:var(--muted)}.flow .fr{color:var(--ok-fg)}
+.flow .nb{color:var(--muted);font-family:var(--font-body)}
+.apibox{border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;margin:12px 0}
+.apibox .prm{display:flex;flex-direction:column;gap:2px}
+.apibox .prm label{font-size:13px;font-family:var(--font-mono)}
+.apibox pre.val{margin:0;padding:10px;border-radius:6px;background:var(--bg);font-family:var(--font-mono);font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
+.pfile{margin-top:6px;font-size:13px}.pfile pre{margin:4px 0 0;padding:8px;background:var(--bg);border-radius:6px;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}
 .files{display:flex;flex-direction:column;gap:2px;max-height:210px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:4px}
 .frow{display:flex;gap:6px;align-items:center}
 .frow button.pick{flex:1;justify-content:flex-start;border:0;background:transparent;font-family:var(--font-mono);font-size:12.5px;min-height:32px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
@@ -161,7 +171,9 @@ details.how summary{cursor:pointer;color:var(--ink)}
       <div id="pyStage" hidden>
         <div class="status b-wait" id="kindCard"></div>
         <div class="pystatus" id="pyStatus" aria-live="polite"></div>
+        <div id="pyApi" class="apibox" hidden></div>
         <div id="pyTests"></div>
+        <div id="pyExtra"></div>
         <pre class="term" id="pyOut" aria-label="파이썬 출력"></pre>
       </div>
     </section>
@@ -402,7 +414,72 @@ function workerMain(){
   function status(s){ post('status',{text:s}); }
   function safePath(p){ p=String(p).replace(/\\/g,'/').replace(/^\/+/,''); if(!p||p.split('/').some(function(x){return x==='..';})) return null; return p; }
   var RUNNER="import sys, os, io, json, time, runpy, traceback, shutil, unittest, warnings, importlib\n"+
+"from datetime import datetime, timedelta, timezone, date\n"+
+"from pathlib import Path\n"+
 "warnings.simplefilter('ignore')\n"+
+"_LIM=300\n"+
+"_TR={'ev':[],'st':[],'over':False}\n"+
+"_KNOWN=set()\n"+
+"def _short(v,n=60):\n"+
+"    try: s=repr(v)\n"+
+"    except Exception: s='<?>'\n"+
+"    s=s.replace('\\n',' ')\n"+
+"    return s if len(s)<=n else s[:n-1]+'…'\n"+
+"def _prof(frame,event,arg):\n"+
+"    if event!='call' and event!='return': return\n"+
+"    co=frame.f_code; f=co.co_filename\n"+
+"    if not f.startswith('/proj/') or co.co_name.startswith('<'): return\n"+
+"    st=_TR['st']; ev=_TR['ev']\n"+
+"    if event=='call':\n"+
+"        if len(ev)>=_LIM:\n"+
+"            _TR['over']=True; st.append(-1); return\n"+
+"        a=[]\n"+
+"        for n in co.co_varnames[:co.co_argcount]:\n"+
+"            if n in ('self','cls'): continue\n"+
+"            if n in frame.f_locals: a.append(n+'='+_short(frame.f_locals[n],40))\n"+
+"        mod=frame.f_globals.get('__name__','?')\n"+
+"        base=os.path.basename(f)\n"+
+"        ev.append({'d':min(len(st),12),'n':mod+'.'+getattr(co,'co_qualname',co.co_name),'a':', '.join(a[:4]),'r':None,'t':'test' if (base.startswith('test') or '/tests/' in f) else 'code'})\n"+
+"        st.append(len(ev)-1)\n"+
+"    else:\n"+
+"        if st:\n"+
+"            i=st.pop()\n"+
+"            if i>=0: ev[i]['r']=_short(arg,50)\n"+
+"def _tr_start():\n"+
+"    _TR['ev']=[]; _TR['st']=[]; _TR['over']=False; sys.setprofile(_prof)\n"+
+"def _tr_stop():\n"+
+"    sys.setprofile(None)\n"+
+"    return {'ev':_TR['ev'],'over':_TR['over']}\n"+
+"def _mark_known():\n"+
+"    global _KNOWN\n"+
+"    _KNOWN=set(os.path.relpath(os.path.join(r,f),'/proj') for r,d,fs in os.walk('/proj') for f in fs)\n"+
+"def produced():\n"+
+"    out=[]\n"+
+"    for root,ds,fs in os.walk('/proj'):\n"+
+"        ds[:]=[d for d in ds if d!='__pycache__']\n"+
+"        for f in fs:\n"+
+"            p=os.path.join(root,f); rel=os.path.relpath(p,'/proj')\n"+
+"            if rel in _KNOWN or f.endswith('.pyc'): continue\n"+
+"            item={'path':rel,'size':os.path.getsize(p),'kind':'text','preview':''}\n"+
+"            if f.endswith(('.db','.sqlite','.sqlite3')):\n"+
+"                item['kind']='db'\n"+
+"                try:\n"+
+"                    import sqlite3\n"+
+"                    c=sqlite3.connect('file:'+p+'?mode=ro',uri=True)\n"+
+"                    tabs=[r[0] for r in c.execute(\"select name from sqlite_master where type='table'\")]\n"+
+"                    parts=[]\n"+
+"                    for t in tabs:\n"+
+"                        n=c.execute('select count(*) from \"%s\"'%t).fetchone()[0]\n"+
+"                        rows=[_short(r,110) for r in c.execute('select * from \"%s\" limit 3'%t)]\n"+
+"                        parts.append(t+': '+str(n)+'개 행'+''.join('\\n  '+x for x in rows))\n"+
+"                    c.close(); item['preview']='\\n'.join(parts)\n"+
+"                except Exception: item['preview']='(DB를 읽지 못했어요)'\n"+
+"            else:\n"+
+"                try:\n"+
+"                    with open(p,encoding='utf-8') as fh: item['preview']=fh.read(1500)\n"+
+"                except Exception: item['kind']='binary'\n"+
+"            out.append(item)\n"+
+"    return out[:30]\n"+
 "def _clean():\n"+
 "    for k,m in list(sys.modules.items()):\n"+
 "        f=getattr(m,'__file__',None)\n"+
@@ -417,7 +494,11 @@ function workerMain(){
 "    def __init__(s):\n"+
 "        super().__init__(); s.rows=[]; s._t=0\n"+
 "    def startTest(s,t):\n"+
-"        super().startTest(t); s._t=time.time()\n"+
+"        super().startTest(t); s._t=time.time(); _tr_start()\n"+
+"    def stopTest(s,t):\n"+
+"        tr=_tr_stop(); super().stopTest(t)\n"+
+"        if s.rows and s.rows[-1]['id']==t.id():\n"+
+"            s.rows[-1]['trace']=tr['ev']; s.rows[-1]['over']=tr['over']\n"+
 "    def _add(s,t,st,msg=''):\n"+
 "        s.rows.append({'id':t.id(),'status':st,'ms':int((time.time()-s._t)*1000),'msg':msg})\n"+
 "    def addSuccess(s,t): super().addSuccess(t); s._add(t,'pass')\n"+
@@ -429,10 +510,10 @@ function workerMain(){
 "    start='/proj/tests' if os.path.isdir('/proj/tests') else '/proj'\n"+
 "    suite=unittest.defaultTestLoader.discover(start,pattern='test*.py')\n"+
 "    r=_R(); t0=time.time(); suite.run(r)\n"+
-"    return json.dumps({'rows':r.rows,'count':r.testsRun,'start':start,'ms':int((time.time()-t0)*1000)},ensure_ascii=False)\n"+
+"    return json.dumps({'rows':r.rows,'count':r.testsRun,'start':start,'ms':int((time.time()-t0)*1000),'files':produced()},ensure_ascii=False)\n"+
 "def run_target(kind,target,args):\n"+
 "    _clean(); sys.path[:0]=_roots(); os.chdir('/proj'); sys.argv=[target]+list(args)\n"+
-"    code=0\n"+
+"    code=0; _tr_start()\n"+
 "    try:\n"+
 "        if kind=='module': runpy.run_module(target,run_name='__main__',alter_sys=True)\n"+
 "        else:\n"+
@@ -443,7 +524,31 @@ function workerMain(){
 "        if isinstance(e.code,str): print(e.code,file=sys.stderr)\n"+
 "    except BaseException:\n"+
 "        traceback.print_exc(); code=1\n"+
-"    return json.dumps({'exit':code})\n"+
+"    tr=_tr_stop()\n"+
+"    return json.dumps({'exit':code,'trace':tr['ev'],'over':tr['over'],'files':produced()},ensure_ascii=False)\n"+
+"def call_fn(mod,fn,aj):\n"+
+"    _clean(); sys.path[:0]=_roots(); os.chdir('/proj')\n"+
+"    ns={'datetime':datetime,'timedelta':timedelta,'timezone':timezone,'date':date,'Path':Path,'json':json}\n"+
+"    kw={}\n"+
+"    try:\n"+
+"        for n,e in json.loads(aj):\n"+
+"            if str(e).strip()!='': kw[n]=eval(e,dict(ns))\n"+
+"    except BaseException:\n"+
+"        return json.dumps({'ok':False,'error':'입력한 값을 파이썬 식으로 읽지 못했어요.\\n'+traceback.format_exc(limit=1),'trace':[],'files':[]},ensure_ascii=False)\n"+
+"    try:\n"+
+"        fobj=getattr(importlib.import_module(mod),fn)\n"+
+"    except BaseException:\n"+
+"        return json.dumps({'ok':False,'error':traceback.format_exc(),'trace':[],'files':[]},ensure_ascii=False)\n"+
+"    _tr_start(); out={}\n"+
+"    try:\n"+
+"        r=fobj(**kw)\n"+
+"        try: shown=json.dumps(r,ensure_ascii=False,indent=2,default=repr)\n"+
+"        except Exception: shown=repr(r)\n"+
+"        out={'ok':True,'value':shown,'type':type(r).__name__}\n"+
+"    except BaseException:\n"+
+"        out={'ok':False,'error':traceback.format_exc()}\n"+
+"    tr=_tr_stop(); out['trace']=tr['ev']; out['over']=tr['over']; out['files']=produced()\n"+
+"    return json.dumps(out,ensure_ascii=False)\n"+
 "def unpack(zpath):\n"+
 "    import zipfile\n"+
 "    shutil.rmtree('/tmp/unz',ignore_errors=True); os.makedirs('/tmp/unz')\n"+
@@ -476,6 +581,7 @@ function workerMain(){
       var p=safePath(f.path); if(!p) return; var full='/proj/'+p;
       py.FS.mkdirTree(full.substring(0,full.lastIndexOf('/'))); py.FS.writeFile(full,f.text);
     });
+    py.runPython('_mark_known()');
   }
   async function needPackages(files){
     var src=files.map(function(f){return f.text;}).join('\n');
@@ -491,6 +597,14 @@ function workerMain(){
       if(m.t==='unpack'){
         status('zip을 푸는 중'); py.FS.writeFile('/tmp/up.zip',new Uint8Array(m.bytes));
         var u=py.runPython("unpack('/tmp/up.zip')"); post('result',{kind:'unpack',files:JSON.parse(u)}); return;
+      }
+      if(m.t==='call'){
+        writeFiles(m.files); await needPackages(m.files);
+        py.setStdout({batched:function(s){post('out',{k:'out',s:s});}});
+        py.setStderr({batched:function(s){post('out',{k:'err',s:s});}});
+        py.globals.set('_m',m.mod); py.globals.set('_f',m.fn); py.globals.set('_aj',JSON.stringify(m.args||[]));
+        status('실행 중');
+        var tc=performance.now(), rc=py.runPython('call_fn(_m,_f,_aj)'); post('result',{kind:'call',data:JSON.parse(rc),ms:Math.round(performance.now()-tc)}); return;
       }
       if(m.t==='run'){
         writeFiles(m.files); await needPackages(m.files);
@@ -650,7 +764,7 @@ function workerMain(){
   function runPy(){
     var t=cur();
     if(!t.files.length){ pyStatus('파일이 없어요. 파일, 폴더, zip을 올리거나 예시를 불러오세요.'); return; }
-    R.events=[]; R.counts={}; R.runId++; R.py=null; R.started=Date.now(); R.pyBusy=true; pyLines=[]; renderPyOut(); $('pyTests').textContent='';
+    R.events=[]; R.counts={}; R.runId++; R.py=null; R.started=Date.now(); R.pyBusy=true; pyLines=[]; renderPyOut(); $('pyTests').textContent=''; $('pyExtra').textContent='';
     $('pyRun').disabled=true; $('stopBtn').disabled=false;
     var en=entryParse(t);
     var args=(t.args||'').trim()?(t.args.trim().split(/\s+/)):[];
@@ -661,7 +775,7 @@ function workerMain(){
       R.pyBusy=false; $('pyRun').disabled=false; $('stopBtn').disabled=true;
       R.py={kind:m.kind,data:m.data,ms:m.ms,entry:en};
       pyStatus('끝났어요 ('+(m.ms/1000).toFixed(1)+'초)');
-      renderPyTests(); renderAll();
+      renderPyTests(); renderExtra(); renderAll();
     }).catch(function(err){
       R.pyBusy=false; $('pyRun').disabled=false; $('stopBtn').disabled=true;
       if(String(err.message)==='stopped') return;
@@ -669,6 +783,107 @@ function workerMain(){
       pyStatus('실행하지 못했어요'); pyLines.push({k:'err',s:err.message}); renderPyOut(); renderAll();
     });
   }
+  function flowEl(trace,over){
+    var box=document.createElement('div'); box.className='flow';
+    if(!trace||!trace.length){ var n=document.createElement('div'); n.className='nb'; n.textContent='이 코드 파일 안의 함수 호출이 기록되지 않았어요.'; box.appendChild(n); return box; }
+    trace.forEach(function(e){
+      var d=document.createElement('div'); d.className='fl'+(e.t==='test'?' test':''); d.style.paddingLeft=(e.d*14)+'px';
+      var a=document.createElement('span'); a.className='fn'; a.textContent=(e.d?'↳ ':'')+e.n;
+      var b=document.createElement('span'); b.className='fa'; b.textContent='('+(e.a||'')+')';
+      d.appendChild(a); d.appendChild(b);
+      if(e.r!=null){ var c=document.createElement('span'); c.className='fr'; c.textContent='  → '+e.r; d.appendChild(c); }
+      box.appendChild(d);
+    });
+    if(over){ var o=document.createElement('div'); o.className='nb'; o.textContent='호출이 많아 앞부분 '+trace.length+'단계까지만 보여줘요.'; box.appendChild(o); }
+    return box;
+  }
+  function filesEl(files){
+    var wrap=document.createElement('div'); if(!files||!files.length) return null;
+    var h=document.createElement('h3'); h.textContent='실행하면서 만들어진 파일 '+files.length+'개'; wrap.appendChild(h);
+    files.forEach(function(f){
+      var d=document.createElement('details'); d.className='pfile'; var s=document.createElement('summary'); s.textContent=f.path+' ('+f.size+'바이트'+(f.kind==='db'?' · DB':'')+')'; d.appendChild(s);
+      var p=document.createElement('pre'); p.textContent=f.kind==='binary'?'(글자가 아닌 파일이라 미리보기가 없어요)':(f.preview||'(비어 있어요)'); d.appendChild(p); wrap.appendChild(d);
+    });
+    return wrap;
+  }
+  function renderExtra(){
+    var h=$('pyExtra'); h.textContent='';
+    if(!R.py||R.py.kind==='fatal') return;
+    if(R.py.kind==='run'){
+      var t=document.createElement('h3'); t.textContent='함수가 불린 순서'; h.appendChild(t); h.appendChild(flowEl(R.py.data.trace,R.py.data.over));
+    }
+    var f=filesEl(R.py.data.files); if(f){ f.style.marginTop='10px'; h.appendChild(f); }
+  }
+  /* 함수 직접 써 보기 */
+  function splitTop(str){
+    var out=[],d=0,q='',cur='';
+    for(var i=0;i<str.length;i++){ var c=str[i];
+      if(q){ cur+=c; if(c===q&&str[i-1]!=='\\') q=''; continue; }
+      if(c==='"'||c==="'"){ q=c; cur+=c; continue; }
+      if('([{'.indexOf(c)>=0) d++; if(')]}'.indexOf(c)>=0) d--;
+      if(c===','&&d===0){ out.push(cur); cur=''; } else cur+=c;
+    }
+    if(cur.trim()) out.push(cur); return out;
+  }
+  function parseApi(t){
+    var out=[];
+    t.files.forEach(function(f){
+      if(!/\.py$/.test(f.path)||isTestPath(f.path)||/__main__\.py$/.test(f.path)) return;
+      var mod=f.path.replace(/^src\//,'').replace(/\.py$/,'').replace(/\/__init__$/,'').replace(/\//g,'.');
+      var re=/^def\s+([A-Za-z]\w*)\s*\(([\s\S]*?)\)\s*(?:->[^:\n]+)?:/gm, m;
+      while((m=re.exec(f.text))){
+        var ps=[]; splitTop(m[2]).forEach(function(x){
+          x=x.trim(); if(!x||x==='/'||x==='*'||x[0]==='*') return;
+          var nm=x.split(/[:=]/)[0].trim(); if(nm==='self'||nm==='cls') return;
+          var eq=x.indexOf('='); ps.push({name:nm,def:eq>=0?x.slice(eq+1).trim():null});
+        });
+        out.push({mod:mod,fn:m[1],ps:ps,key:mod+'.'+m[1]});
+      }
+    });
+    return out;
+  }
+  var apiList=[];
+  function renderApi(){
+    var host=$('pyApi'), t=cur(); apiList=t.mode==='py'?parseApi(t):[]; host.textContent='';
+    if(!apiList.length){ host.hidden=true; return; }
+    host.hidden=false;
+    var h=document.createElement('h3'); h.textContent='함수 직접 써 보기'; host.appendChild(h);
+    var n=document.createElement('p'); n.className='note'; n.textContent='코드 안의 함수를 골라 값을 넣고 실행해 보세요. 값은 파이썬 식으로 적어요. 예: 3 · "글자" · [1, 2] · datetime(2026, 11, 16, tzinfo=timezone.utc). 비워 두면 기본값을 써요.'; host.appendChild(n);
+    var sel=document.createElement('select'); sel.id='apiFn'; sel.setAttribute('aria-label','실행할 함수');
+    apiList.forEach(function(a,i){ var o=document.createElement('option'); o.value=i; o.textContent=a.key+'('+a.ps.map(function(p){ return p.name; }).join(', ')+')'; sel.appendChild(o); });
+    host.appendChild(sel);
+    var pm=document.createElement('div'); pm.id='apiParams'; pm.className='row'; pm.style.flexDirection='column'; pm.style.alignItems='stretch'; host.appendChild(pm);
+    var rb=document.createElement('button'); rb.type='button'; rb.className='primary'; rb.id='apiRun'; rb.textContent='이 함수 실행'; rb.style.alignSelf='flex-start'; host.appendChild(rb);
+    var out=document.createElement('div'); out.id='apiOut'; host.appendChild(out);
+    function drawParams(){
+      pm.textContent=''; var a=apiList[+sel.value]; if(!a) return;
+      if(!a.ps.length){ var z=document.createElement('p'); z.className='note'; z.textContent='넣을 값이 없는 함수예요.'; pm.appendChild(z); }
+      a.ps.forEach(function(p,i){
+        var w=document.createElement('div'); w.className='prm'; var l=document.createElement('label'); l.htmlFor='ap'+i; l.textContent=p.name+(p.def===null?'  (필수)':'  (기본값 '+p.def+')');
+        var inp=document.createElement('input'); inp.type='text'; inp.id='ap'+i; inp.autocomplete='off'; inp.spellcheck=false; inp.placeholder=p.def===null?'값을 파이썬 식으로':'비우면 '+p.def;
+        w.appendChild(l); w.appendChild(inp); pm.appendChild(w);
+      });
+    }
+    sel.addEventListener('change',drawParams); drawParams();
+    rb.addEventListener('click',function(){ runApi(); });
+  }
+  function runApi(){
+    var t=cur(), a=apiList[+$('apiFn').value], out=$('apiOut'); if(!a||R.pyBusy) return;
+    var args=a.ps.map(function(p,i){ return [p.name,($('ap'+i).value||'')]; });
+    var miss=a.ps.filter(function(p,i){ return p.def===null&&!args[i][1].trim(); });
+    if(miss.length){ out.textContent='필수 값이 비었어요: '+miss.map(function(p){ return p.name; }).join(', '); return; }
+    R.pyBusy=true; $('apiRun').disabled=true; $('pyRun').disabled=true; out.textContent='실행 중… (처음이면 파이썬을 내려받느라 오래 걸려요)'; pyLines=[]; renderPyOut();
+    ensurePy().then(function(){ return pyCall({t:'call',files:t.files,mod:a.mod,fn:a.fn,args:args}); }).then(function(m){
+      R.pyBusy=false; $('apiRun').disabled=false; $('pyRun').disabled=false; out.textContent='';
+      var d=m.data, box=document.createElement('div'); box.className='status '+(d.ok?'b-ok':'b-bad');
+      var b=document.createElement('b'); b.textContent=d.ok?'결과 ('+d.type+')':'오류가 났어요'; box.appendChild(b); out.appendChild(box);
+      var pre=document.createElement('pre'); pre.className='val'; pre.textContent=d.ok?d.value:d.error; out.appendChild(pre);
+      var ft=document.createElement('h3'); ft.textContent='함수가 불린 순서'; ft.style.marginTop='8px'; out.appendChild(ft); out.appendChild(flowEl(d.trace,d.over));
+      var fe=filesEl(d.files); if(fe) out.appendChild(fe);
+      pyStatus('끝났어요 ('+(m.ms/1000).toFixed(1)+'초)');
+    }).catch(function(err){ R.pyBusy=false; $('apiRun').disabled=false; $('pyRun').disabled=false; if(String(err.message)!=='stopped') out.textContent='실행하지 못했어요: '+err.message; });
+  }
+
   function renderPyTests(){
     var host=$('pyTests'); host.textContent='';
     if(!R.py||R.py.kind!=='tests') return;
@@ -686,6 +901,7 @@ function workerMain(){
       var id=document.createElement('span'); id.className='tid'; id.textContent=r.id;
       s.appendChild(b); s.appendChild(id); d.appendChild(s);
       if(r.msg){ var p=document.createElement('pre'); p.textContent=r.msg; d.appendChild(p); }
+      if(r.trace){ var fh=document.createElement('div'); fh.className='note'; fh.style.marginTop='8px'; fh.textContent='이 테스트가 코드를 실행한 순서'; d.appendChild(fh); d.appendChild(flowEl(r.trace,r.over)); }
       host.appendChild(d);
     });
   }
@@ -1031,11 +1247,11 @@ function workerMain(){
     var t=cur();
     $('tname').value=t.name; $('code').value=t.code||''; $('memo').value=t.memo||''; $('args').value=t.args||''; $('stdin').value=t.stdin||'';
     $('handoff').hidden=true; $('copyMsg').textContent='';
-    renderSel(); showMode(); renderFiles(); showSel(); renderKind(); renderSuggest(); renderCustom(); renderAuto(); renderLog(); renderTally();
+    renderSel(); showMode(); renderFiles(); showSel(); renderKind(); renderApi(); renderExtra(); renderSuggest(); renderCustom(); renderAuto(); renderLog(); renderTally();
     if(t.mode==='web') layoutStage();
   }
   function renderAll(){ renderLog(); renderAuto(); renderTally(); }
-  function reset(){ R.events=[]; R.counts={}; R.ready=false; R.loaded=false; R.noSignal=false; R.stat=null; R.smoke=null; R.smokeRunning=false; R.py=null; R.empty=false; R.started=0; pyLines=[]; renderPyOut(); $('pyTests').textContent=''; pyStatus(''); $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 실행'; clearTimeout(sigTimer); }
+  function reset(){ R.events=[]; R.counts={}; R.ready=false; R.loaded=false; R.noSignal=false; R.stat=null; R.smoke=null; R.smokeRunning=false; R.py=null; R.empty=false; R.started=0; pyLines=[]; renderPyOut(); $('pyTests').textContent=''; $('pyExtra').textContent=''; pyStatus(''); $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 실행'; clearTimeout(sigTimer); }
   function switchTo(id){ if(pw&&R.pyBusy) stopPy(); S.cur=id; save(); armed=false; $('delTest').textContent='삭제'; $('delTest').classList.remove('warnbtn'); reset(); loadCur(); if(cur().mode==='web') runWeb(); }
   $('testSel').addEventListener('change',function(){ switchTo($('testSel').value); });
   $('newTest').addEventListener('click',function(){ var t=mk('새 테스트',cur().mode); S.tests.push(t); switchTo(t.id); (t.mode==='web'?$('code'):$('newFile')).focus(); });
