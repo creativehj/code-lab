@@ -79,6 +79,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .stagewrap{display:flex;justify-content:center;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:hidden}
 .fbox{position:relative;max-width:100%}
 iframe{display:block;border:1px solid var(--line);border-radius:6px;background:#fff;transform-origin:0 0;position:absolute;left:0;top:0}
+.storebar{display:flex;flex-direction:column;gap:6px}
+.storebar pre.val{padding:8px;border-radius:6px;background:var(--bg);font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow:auto}
 .sticky{position:sticky;top:16px}
 .grid.wide .sticky,.sticky.off{position:static}
 @media (max-width:920px){.sticky{position:static}}
@@ -172,6 +174,12 @@ details.how summary{cursor:pointer;color:var(--ink)}
       </div>
       <p class="sub" id="sizeNote" aria-live="polite"></p>
       <div id="webStage" class="stagewrap"><div class="fbox" id="fbox"><iframe id="stage" title="실행 화면" sandbox="allow-scripts allow-forms allow-modals"></iframe></div></div>
+      <div id="storeBar" class="storebar">
+        <div class="row"><span id="storeInfo" class="note" aria-live="polite"></span>
+          <button type="button" class="small" id="storeReload">새로고침 (저장 유지)</button>
+          <button type="button" class="small" id="storeClear">저장 지우고 처음부터</button></div>
+        <details class="how"><summary>앱이 저장한 데이터 보기</summary><pre class="val" id="storeList" style="margin:6px 0 0"></pre></details>
+      </div>
       <div id="pyStage" hidden>
         <div class="status b-wait" id="kindCard"></div>
         <div class="pystatus" id="pyStatus" aria-live="polite"></div>
@@ -198,11 +206,22 @@ details.how summary{cursor:pointer;color:var(--ink)}
         </div>
 
         <div id="webIn">
-          <label class="l" for="code">HTML 코드 (붙여넣기, 또는 파일 올리기 · 끌어다 놓기)</label>
+          <div id="codeWrap">
+          <label class="l" for="code">HTML 코드 (붙여넣기, 또는 파일·폴더·zip 올리기 · 끌어다 놓기)</label>
           <textarea id="code" spellcheck="false" placeholder="여기에 HTML 코드를 붙여 넣으세요"></textarea>
+          </div>
+          <div id="projBox" class="apibox" hidden>
+            <h3>웹 프로젝트 파일 <span id="projCount" class="note"></span></h3>
+            <div class="files" id="projFiles"></div>
+            <label class="l" for="projEntry">시작 파일</label>
+            <select id="projEntry"></select>
+            <div class="row"><button type="button" class="small" id="projClear">프로젝트 비우고 HTML 직접 넣기</button></div>
+            <p class="note">여러 파일을 한 화면으로 합쳐서 실행해요. 파일을 고치려면 다시 올리세요.</p>
+          </div>
           <div class="row" style="margin-top:8px">
             <button type="button" class="primary" id="run">실행</button>
-            <label class="btn" for="file" id="fileLabel">파일 올리기<input type="file" id="file" class="vh" accept=".html,.htm,.py,.zip,.txt,.json,.md" multiple></label>
+            <label class="btn" for="file" id="fileLabel">파일 올리기<input type="file" id="file" class="vh" accept=".html,.htm,.css,.js,.json,.csv,.txt,.md,.svg,.png,.jpg,.jpeg,.gif,.webp,.ico,.py,.zip" multiple></label>
+            <label class="btn" for="webDir">폴더 올리기<input type="file" id="webDir" class="vh" webkitdirectory multiple></label>
             <button type="button" id="sample">예시 불러오기</button>
           </div>
           <label class="chk" for="net" style="margin-top:8px"><input type="checkbox" id="net"><span>외부 요청 허용 (기본은 막음)</span></label>
@@ -250,7 +269,7 @@ details.how summary{cursor:pointer;color:var(--ink)}
 
       <section class="card" aria-labelledby="h-check">
         <h2 id="h-check">점검 목록</h2>
-        <div class="bar"><h3>자동 점검</h3><button type="button" class="small" id="smokeBtn">자동 탐색 실행</button></div>
+        <div class="bar"><h3>자동 점검</h3><div class="seg"><button type="button" class="small" id="smokeBtn">자동 탐색 실행</button><button type="button" class="small" id="pcBtn">저장 유지 확인</button></div></div>
         <div id="listAuto"></div>
         <h3>이 코드에서 뽑은 확인 항목</h3>
         <div id="listSuggest"></div>
@@ -279,15 +298,21 @@ details.how summary{cursor:pointer;color:var(--ink)}
 function boot(RUN){
   var T0=Date.now(), errTotal=0;
   function send(t,m,x){ try{ parent.postMessage({__lab:1,r:RUN,t:t,m:String(m==null?'':m),x:x||null,at:Date.now()-T0},'*'); }catch(e){} }
+  var STORE=window.__LABSTORE||{}, syncT=null;
+  function syncStore(d){ clearTimeout(syncT); syncT=setTimeout(function(){ var c={}; Object.keys(d).forEach(function(k){ c[k]=d[k]; }); send('store','',{local:c}); },150); }
   ['localStorage','sessionStorage'].forEach(function(name){
     try{ window[name].getItem('__t'); }catch(e){
-      var d={};
-      var s={getItem:function(k){return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},setItem:function(k,v){d[k]=String(v)},removeItem:function(k){delete d[k]},clear:function(){d={}},key:function(i){var ks=Object.keys(d);return i<ks.length?ks[i]:null}};
+      var up=name==='localStorage', d={};
+      if(up){ var init=STORE.local||{}; Object.keys(init).forEach(function(k){ d[k]=String(init[k]); }); }
+      var s={getItem:function(k){return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},setItem:function(k,v){d[k]=String(v);if(up)syncStore(d);},removeItem:function(k){delete d[k];if(up)syncStore(d);},clear:function(){Object.keys(d).forEach(function(k){delete d[k];});if(up)syncStore(d);},key:function(i){var ks=Object.keys(d);return i<ks.length?ks[i]:null}};
       Object.defineProperty(s,'length',{get:function(){return Object.keys(d).length}});
-      try{ Object.defineProperty(window,name,{value:s,configurable:true}); send('note',name+'을(를) 실험실에서는 임시 저장소로 대신해요 (새로고침하면 지워져요)'); }
+      var px=new Proxy(s,{get:function(t,k){ if(k in t) return t[k]; var v=t.getItem(String(k)); return v===null?undefined:v; },set:function(t,k,v){ t.setItem(String(k),v); return true; },deleteProperty:function(t,k){ t.removeItem(String(k)); return true; }});
+      try{ Object.defineProperty(window,name,{value:px,configurable:true}); send('note',up?'localStorage는 실험실이 대신 보관해요. 새로고침해도 데이터가 남는지 확인할 수 있어요':'sessionStorage는 임시로만 대신해요 (새로고침하면 지워져요)'); }
       catch(_){ send('note',name+'을(를) 이 화면에서는 쓸 수 없어요'); }
     }
   });
+  try{ var LF=window.__LABFILES; if(LF&&window.fetch){ var ofetch=window.fetch; window.fetch=function(u,o){ try{ var raw=String(typeof u==='string'?u:(u&&u.url)||u).split('#')[0].split('?')[0]; var k=raw.replace(/^(\.\/|\/)+/,''); if(Object.prototype.hasOwnProperty.call(LF,k)){ var ty=/\.json$/i.test(k)?'application/json':/\.csv$/i.test(k)?'text/csv':'text/plain'; return Promise.resolve(new Response(LF[k],{status:200,headers:{'Content-Type':ty}})); } }catch(e){} return ofetch.apply(this,arguments); }; } }catch(e){}
+  try{ if(window.indexedDB){ var ido=indexedDB.open; indexedDB.open=function(){ try{ return ido.apply(indexedDB,arguments); }catch(e){ send('warn','이 앱이 indexedDB를 쓰려고 했지만 실험실 화면에서는 쓸 수 없어요. 이 앱의 저장 기능은 여기서 확인할 수 없어요'); throw e; } }; } }catch(e){}
   window.addEventListener('error',function(e){
     if(e.target&&e.target!==window&&(e.target.src||e.target.href)){ send('resource','불러오지 못함: <'+String(e.target.tagName).toLowerCase()+'> '+(e.target.src||e.target.href)); return; }
     errTotal++; send('error',(e.message||'오류')+(e.lineno?' (줄 '+e.lineno+')':''));
@@ -407,7 +432,7 @@ function boot(RUN){
   }
   window.addEventListener('message',function(e){
     var m=e.data; if(!m||!m.__labcmd) return;
-    if(m.__labcmd==='static') staticCheck(); else if(m.__labcmd==='smoke') smoke(m.seed||1);
+    if(m.__labcmd==='static') staticCheck(); else if(m.__labcmd==='smoke') smoke(m.seed||1); else if(m.__labcmd==='text') send('text','',{s:(document.body?document.body.innerText:'').slice(0,6000)});
   });
 }
 
@@ -644,7 +669,7 @@ function workerMain(){
     {path:'shop/__main__.py',text:'import sys\nfrom .cart import total\n\nitems = [("사과", 1200, 3), ("우유", 2500, 2)]\nprint("합계:", total(items))\nif len(sys.argv) > 1:\n    print("인자:", sys.argv[1:])\n'},
     {path:'tests/test_cart.py',text:'import unittest\nfrom shop.cart import total, apply_coupon\n\nclass CartTests(unittest.TestCase):\n    def test_total(self):\n        self.assertEqual(total([("a", 1000, 2)]), 2000)\n\n    def test_discount(self):\n        self.assertEqual(total([("a", 1000, 2)], 0.1), 1800)\n\n    def test_empty(self):\n        self.assertEqual(total([]), 0)\n\n    def test_coupon_lowercase(self):\n        self.assertEqual(apply_coupon(10000, "welcome10"), 9000)\n\n    def test_unknown_coupon(self):\n        self.assertEqual(apply_coupon(10000, "nope"), 10000)\n\n    def test_negative_quantity(self):\n        # 수량이 음수면 오류여야 하는데 지금은 그냥 계산됨\n        with self.assertRaises(ValueError):\n            total([("a", 1000, -1)])\n'}
   ];
-  function mk(name,mode){ return {id:uid(),name:name,mode:mode||'web',code:'',files:[],sel:'',entry:'',args:'',stdin:'',memo:'',custom:[],items:{}}; }
+  function mk(name,mode){ return {id:uid(),name:name,mode:mode||'web',code:'',wfiles:null,entryHtml:'',store:{},files:[],sel:'',entry:'',args:'',stdin:'',memo:'',custom:[],items:{}}; }
 
   var S={v:2,tests:[],cur:null,net:false,size:'390',wide:false,persist:false};
   try{ var raw=localStorage.getItem(KEY); if(raw){ var o=JSON.parse(raw); S.net=!!o.net; S.size=o.size||'390'; S.wide=!!o.wide; S.rot=!!o.rot; S.persist=o.persist===true; if(S.persist&&o.tests&&o.tests.length){ S.tests=o.tests; S.cur=o.cur; } else if(o.tests){ try{ localStorage.setItem(KEY,JSON.stringify({v:2,persist:false,net:S.net,size:S.size,wide:S.wide,rot:S.rot})); }catch(e){} } } try{ localStorage.removeItem(OLD); }catch(e){} }catch(e){}
@@ -654,7 +679,7 @@ function workerMain(){
   function cur(){ for(var i=0;i<S.tests.length;i++){ if(S.tests[i].id===S.cur) return S.tests[i]; } S.cur=S.tests[0].id; return S.tests[0]; }
 
   /* ---------- 실행 상태 (저장 안 함) ---------- */
-  var R={runId:0,counts:{},smokeTok:0,events:[],ready:false,loaded:false,started:0,noSignal:false,stat:null,smoke:null,smokeRunning:false,py:null,pyStatus:'',pyBusy:false,pyMsg:''};
+  var R={runId:0,counts:{},smokeTok:0,pc:null,pcRunning:false,onSmoke:null,onText:null,events:[],ready:false,loaded:false,started:0,noSignal:false,stat:null,smoke:null,smokeRunning:false,py:null,pyStatus:'',pyBusy:false,pyMsg:''};
   var sigTimer=null;
   var stage=$('stage'), fbox=$('fbox');
 
@@ -685,21 +710,63 @@ function workerMain(){
   /* ---------- 웹 실행 ---------- */
   var BOOT1=boot.toString().replace(/\r?\n/g,' ');
   var CSP='<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'">';
-  function inject(code,runId){
-    var head=(S.net?'':CSP)+'<script>('+BOOT1+')('+runId+');<\/script>';
+  function jsonForScript(o){ return JSON.stringify(o).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029'); }
+  function inject(code,runId,store,lfiles){
+    var head=(S.net?'':CSP)+'<script>window.__LABSTORE='+jsonForScript({local:store||{}})+';window.__LABFILES='+jsonForScript(lfiles||{})+';<\/script><script>('+BOOT1+')('+runId+');<\/script>';
     var m=/<head[^>]*>/i.exec(code);
     if(m){ var i=m.index+m[0].length; return code.slice(0,i)+head+code.slice(i); }
     return head+code;
+  }
+  function webSrc(t){ return t.wfiles?t.wfiles.filter(function(f){ return f.text!=null; }).map(function(f){ return f.text; }).join('\n'):(t.code||''); }
+  function webEntry(t){
+    var h=(t.wfiles||[]).filter(function(f){ return f.text!=null&&/\.html?$/i.test(f.path); }); if(!h.length) return null;
+    var e=t.entryHtml&&h.filter(function(f){ return f.path===t.entryHtml; })[0]; if(e) return e;
+    h.sort(function(a,b){ var ai=/(^|\/)index\.html?$/i.test(a.path)?0:1, bi=/(^|\/)index\.html?$/i.test(b.path)?0:1; return ai-bi||a.path.split('/').length-b.path.split('/').length||(a.path<b.path?-1:1); });
+    return h[0];
+  }
+  function resolvePath(base,ref){
+    ref=String(ref).split('#')[0].split('?')[0];
+    if(!ref||/^([a-z][a-z0-9+.-]*:)?\/\//i.test(ref)||/^(data|blob|mailto|tel|javascript):/i.test(ref)) return null;
+    var parts=(ref.charAt(0)==='/'?ref.slice(1):base+ref).split('/'), out=[];
+    parts.forEach(function(x){ if(x==='..') out.pop(); else if(x&&x!=='.') out.push(x); });
+    return out.join('/');
+  }
+  function buildWebDoc(t,notes){
+    if(!t.wfiles||!t.wfiles.length) return {html:t.code||'',lf:{}};
+    var entry=webEntry(t); if(!entry){ notes.push('시작할 HTML 파일이 없어요'); return {html:'',lf:{}}; }
+    var dir=entry.path.indexOf('/')>=0?entry.path.slice(0,entry.path.lastIndexOf('/')+1):'';
+    var map={}; t.wfiles.forEach(function(f){ map[f.path]=f; });
+    function find(ref){ var p=resolvePath(dir,ref); if(p===null) return {ext:true}; return {f:map[p],p:p}; }
+    var html=entry.text;
+    html=html.replace(/<link\b[^>]*>/gi,function(tag){
+      var rel=/rel\s*=\s*["']?([^"'\s>]+)/i.exec(tag), href=/href\s*=\s*["']([^"']+)["']/i.exec(tag); if(!rel||!href) return tag;
+      var r=rel[1].toLowerCase(), x=find(href[1]); if(x.ext) return tag;
+      if(r==='stylesheet'){ if(!x.f||x.f.text==null){ notes.push('스타일 파일을 찾지 못했어요: '+href[1]); return tag; } return '<style>'+x.f.text.replace(/<\/style/gi,'<\\/style')+'</style>'; }
+      if(/icon/.test(r)&&x.f&&x.f.dataUrl) return tag.replace(href[0],'href="'+x.f.dataUrl+'"');
+      return tag;
+    });
+    html=html.replace(/<script\b([^>]*?)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>\s*<\/script>/gi,function(m,a,src,b){
+      var x=find(src); if(x.ext) return m;
+      if(!x.f||x.f.text==null){ notes.push('스크립트 파일을 찾지 못했어요: '+src); return m; }
+      var attrs=(a+' '+b).replace(/\s+/g,' ').trim();
+      return '<script'+(attrs?' '+attrs:'')+'>'+x.f.text.replace(/<\/script/gi,'<\\/script')+'<\/script>';
+    });
+    html=html.replace(/(<(?:img|source)\b[^>]*?\bsrc\s*=\s*)(["'])([^"']+)\2/gi,function(m,pre,q,ref){ var x=find(ref); if(x.ext||!x.f||!x.f.dataUrl) return m; return pre+q+x.f.dataUrl+q; });
+    if(/\bimport\b[^;\n]*\bfrom\s*["']\.{0,2}\//.test(html)) notes.push('파일끼리 import로 나뉜 모듈 방식은 아직 지원하지 않아요. 이 방식은 실행되지 않을 수 있어요');
+    var lf={};
+    t.wfiles.forEach(function(f){ if(f.text==null||/\.html?$/i.test(f.path)) return; lf[f.path]=f.text; if(dir&&f.path.indexOf(dir)===0) lf[f.path.slice(dir.length)]=f.text; });
+    return {html:html,lf:lf};
   }
   function cmd(msg){ try{ stage.contentWindow&&stage.contentWindow.postMessage(msg,'*'); }catch(e){} }
   function addEvent(t,m,at){ var l=R.events[R.events.length-1]; for(var i=R.events.length-1;i>=0&&i>=R.events.length-30;i--){ if(R.events[i].t===t&&R.events[i].m===m){ R.events[i].n=(R.events[i].n||1)+1; R.counts[t]=(R.counts[t]||0)+1; return; } } if(R.events.length<200) R.events.push({t:t,m:m,n:1,at:at==null?Date.now()-R.started:at}); R.counts[t]=(R.counts[t]||0)+1; }
   function runWeb(){
     var t=cur(); R.runId++; R.events=[]; R.counts={}; R.ready=false; R.loaded=false; R.noSignal=false; R.stat=null; R.smoke=null; R.smokeRunning=false; R.started=Date.now();
     clearTimeout(sigTimer);
-    if(!(t.code||'').trim()){ stage.srcdoc='<p style="font-family:sans-serif;color:#555;padding:16px">코드를 넣고 실행을 누르세요.</p>'; R.empty=true; renderAll(); return; }
-    R.empty=false;
+    var notes=[], built=buildWebDoc(t,notes);
+    if(!(built.html||'').trim()){ stage.srcdoc='<p style="font-family:sans-serif;color:#555;padding:16px">코드를 넣고 실행을 누르세요.</p>'; R.empty=true; notes.forEach(function(n){ addEvent('warn',n,0); }); renderAll(); return; }
+    R.empty=false; notes.forEach(function(n){ addEvent('warn',n,0); });
     var id=R.runId; stage.srcdoc='';
-    requestAnimationFrame(function(){ stage.srcdoc=inject(t.code,id); });
+    requestAnimationFrame(function(){ stage.srcdoc=inject(built.html,id,t.store,built.lf); });
     sigTimer=setTimeout(function(){ if(!R.ready&&R.runId===id){ R.noSignal=true; renderAll(); } },3000);
     renderAll();
   }
@@ -709,7 +776,9 @@ function workerMain(){
     if(d.t==='ready'){ R.ready=true; R.noSignal=false; }
     else if(d.t==='load'){ R.loaded=true; }
     else if(d.t==='static'){ R.stat=d.x; }
-    else if(d.t==='smoke'){ R.smoke=d.x; R.smokeRunning=false; $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 다시 실행'; }
+    else if(d.t==='smoke'){ R.smoke=d.x; R.smokeRunning=false; if(!R.pcRunning) $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 다시 실행'; if(R.onSmoke){ var f1=R.onSmoke; R.onSmoke=null; f1(); } }
+    else if(d.t==='store'){ cur().store=d.x.local||{}; if(S.persist) save(); renderStore(); }
+    else if(d.t==='text'){ if(R.onText){ var f2=R.onText; R.onText=null; f2(d.x.s); } }
     else addEvent(d.t,d.m,d.at);
     schedule();
   });
@@ -722,8 +791,39 @@ function workerMain(){
   function startSmoke(){
     R.smoke=null; R.smokeRunning=true; var tok=++R.smokeTok, rid=R.runId; $('smokeBtn').disabled=true; $('smokeBtn').textContent='탐색 중…';
     cmd({__labcmd:'smoke',seed:Math.floor(Math.random()*1000000)+1}); renderAuto();
-    setTimeout(function(){ if(R.smokeRunning&&R.smokeTok===tok&&R.runId===rid){ R.smokeRunning=false; $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 다시 실행'; addEvent('error','자동 탐색이 끝나지 않았어요 (화면이 멈췄거나 응답이 없음)'); renderAll(); } },14000);
+    setTimeout(function(){ if(R.smokeRunning&&R.smokeTok===tok&&R.runId===rid){ R.smokeRunning=false; $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 다시 실행'; addEvent('error','자동 탐색이 끝나지 않았어요 (화면이 멈췄거나 응답이 없음)'); if(R.onSmoke){ var f3=R.onSmoke; R.onSmoke=null; f3(); } renderAll(); } },14000);
   }
+
+  function renderStore(){
+    var t=cur(), bar=$('storeBar'); if(t.mode!=='web'){ bar.hidden=true; return; } bar.hidden=false;
+    var st=t.store||{}, keys=Object.keys(st);
+    $('storeInfo').textContent=keys.length?'앱이 저장한 데이터 '+keys.length+'개':'앱이 저장한 데이터가 아직 없어요';
+    $('storeList').textContent=keys.length?keys.map(function(k){ var v=String(st[k]).replace(/\s+/g,' '); return k+' = '+(v.length>120?v.slice(0,119)+'…':v); }).join('\n'):'(없음)';
+  }
+  $('storeReload').addEventListener('click',function(){ runWeb(); });
+  $('storeClear').addEventListener('click',function(){ cur().store={}; R.pc=null; save(); renderStore(); runWeb(); });
+  function waitFor(cond,ms){ return new Promise(function(res){ var t0=Date.now(); (function tick(){ if(cond()||Date.now()-t0>ms) res(cond()); else setTimeout(tick,80); })(); }); }
+  function askText(){ return new Promise(function(res){ var to=setTimeout(function(){ R.onText=null; res(null); },2500); R.onText=function(x){ clearTimeout(to); res(x); }; cmd({__labcmd:'text'}); }); }
+  function firstDiff(a,b){ var i=0; while(i<a.length&&i<b.length&&a[i]===b[i]) i++; function cut(x){ return x.slice(Math.max(0,i-15),i+35); } return {before:cut(a),after:cut(b)}; }
+  async function persistCheck(){
+    var t=cur(); if(t.mode!=='web'||!webSrc(t).trim()||R.pcRunning||R.smokeRunning) return;
+    R.pcRunning=true; R.pc=null; $('pcBtn').disabled=true; $('smokeBtn').disabled=true; renderAll();
+    if(!R.ready||!R.loaded){ runWeb(); await waitFor(function(){ return R.ready&&R.loaded; },6000); }
+    await new Promise(function(res){ R.onSmoke=res; startSmoke(); });
+    await new Promise(function(r){ setTimeout(r,500); });
+    var A=await askText(), keys=Object.keys(t.store||{}).length;
+    var keepEv=R.events.slice(), keepCn=Object.assign({},R.counts), keepSm=R.smoke;
+    runWeb(); await waitFor(function(){ return R.ready&&R.loaded; },6000); await new Promise(function(r){ setTimeout(r,700); });
+    var B=await askText();
+    R.events=keepEv.concat(R.events); Object.keys(R.counts).forEach(function(k){ keepCn[k]=(keepCn[k]||0)+R.counts[k]; }); R.counts=keepCn; R.smoke=keepSm;
+    var norm=function(x){ return (x||'').replace(/\s+/g,' ').trim(); }, pc;
+    if(A===null||B===null) pc={st:'warn',t:'새로고침 전후 비교를 하지 못했어요',why:'화면에서 글자를 읽어 오지 못했어요.'};
+    else if(!keys) pc={st:'warn',t:'앱이 브라우저에 저장하는 데이터가 없어요',why:'자동 탐색 동안 저장된 항목이 없었어요. 입력한 내용이 새로고침하면 사라지는 앱이거나, 저장되는 기능을 못 건드렸을 수 있어요. 직접 입력해 보고 "새로고침 (저장 유지)"로 확인하세요. indexedDB로 저장하는 앱은 여기서 확인할 수 없어요.'};
+    else if(norm(A)===norm(B)) pc={st:'ok',t:'새로고침 뒤에도 화면이 같아요 (저장 '+keys+'개)',why:'자동 탐색으로 입력한 뒤 새로고침했는데 화면 글자가 그대로예요. 시간이나 무작위로 바뀌는 화면은 다르게 나올 수 있어요.'};
+    else { var df=firstDiff(norm(A),norm(B)); pc={st:'warn',t:'새로고침 뒤 화면이 달라졌어요 (저장 '+keys+'개)',why:'저장된 데이터가 화면에 다시 나오지 않았거나, 시간·무작위로 바뀌는 내용일 수 있어요. 처음 다른 부분 — 전: "'+df.before+'" / 후: "'+df.after+'"'}; }
+    R.pc=pc; R.pcRunning=false; $('pcBtn').disabled=false; $('smokeBtn').disabled=false; renderAll(); renderStore();
+  }
+  $('pcBtn').addEventListener('click',persistCheck);
 
   /* ---------- 파이썬 ---------- */
   var pw=null,pyReady=false,pyJob=null,pyLines=[];
@@ -916,7 +1016,7 @@ function workerMain(){
   }
 
   /* ---------- 파일 올리기 ---------- */
-  var TEXT_EXT=/\.(py|txt|md|json|csv|yaml|yml|toml|cfg|ini|sql|html|htm|js)$/i;
+  var TEXT_EXT=/\.(py|txt|md|json|csv|yaml|yml|toml|cfg|ini|sql|html|htm|js|mjs|css|xml)$/i;
   var SKIP=/(^|\/)(__pycache__|\.git|node_modules|__MACOSX|\.venv|venv)(\/|$)|\.pyc$|\.DS_Store$/;
   function readText(f){ return new Promise(function(res){ var r=new FileReader(); r.onload=function(){ res(String(r.result||'')); }; r.onerror=function(){ res(null); }; r.readAsText(f); }); }
   function readBytes(f){ return new Promise(function(res){ var r=new FileReader(); r.onload=function(){ res(r.result); }; r.onerror=function(){ res(null); }; r.readAsArrayBuffer(f); }); }
@@ -928,39 +1028,91 @@ function workerMain(){
     if(!t.sel||!map[t.sel]) t.sel=t.files[0]?t.files[0].path:'';
     t.entry=bestEntry(t,true);
   }
+  var IMG_EXT=/\.(png|jpe?g|gif|svg|webp|ico|bmp)$/i;
+  var MIME={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',svg:'image/svg+xml',webp:'image/webp',ico:'image/x-icon',bmp:'image/bmp'};
+  function u8text(u8){ try{ return new TextDecoder('utf-8',{fatal:true}).decode(u8); }catch(e){ return null; } }
+  function u8dataUrl(u8,path){ var ext=(path.split('.').pop()||'').toLowerCase(), bin='', ch=0x8000; for(var i=0;i<u8.length;i+=ch) bin+=String.fromCharCode.apply(null,u8.subarray(i,i+ch)); return 'data:'+(MIME[ext]||'application/octet-stream')+';base64,'+btoa(bin); }
+  function readDataUrl(f){ return new Promise(function(res){ var r=new FileReader(); r.onload=function(){ res(String(r.result||'')); }; r.onerror=function(){ res(null); }; r.readAsDataURL(f); }); }
+  async function unzipJS(buf){
+    var u8=new Uint8Array(buf), dv=new DataView(buf), n=u8.length, eocd=-1;
+    for(var i=n-22;i>=Math.max(0,n-65557);i--){ if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; } }
+    if(eocd<0) throw new Error('zip 파일이 아니에요');
+    var cnt=Math.min(dv.getUint16(eocd+10,true),3000), off=dv.getUint32(eocd+16,true), out=[];
+    for(var k=0;k<cnt;k++){
+      if(dv.getUint32(off,true)!==0x02014b50) break;
+      var flag=dv.getUint16(off+8,true), method=dv.getUint16(off+10,true), csize=dv.getUint32(off+20,true), usize=dv.getUint32(off+24,true), nl=dv.getUint16(off+28,true), el=dv.getUint16(off+30,true), cl=dv.getUint16(off+32,true), lho=dv.getUint32(off+42,true);
+      var name=new TextDecoder('utf-8').decode(u8.subarray(off+46,off+46+nl)); off+=46+nl+el+cl;
+      if(name.slice(-1)==='/'||(flag&1)||usize>3000000) continue;
+      var lnl=dv.getUint16(lho+26,true), lel=dv.getUint16(lho+28,true), ds=lho+30+lnl+lel, data=u8.subarray(ds,ds+csize), bytes;
+      if(method===0) bytes=data.slice();
+      else if(method===8){ var stream=new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')); bytes=new Uint8Array(await new Response(stream).arrayBuffer()); }
+      else continue;
+      out.push({path:name,bytes:bytes});
+    }
+    return out;
+  }
   async function takeFiles(items){
-    // items: [{file, path}]
-    var t=cur(), got=[], skipped=0, web=null, zips=[];
-    var total=t.files.reduce(function(a,f){ return a+f.text.length; },0);
+    var t=cur(), flat=[], skipped=0;
     for(var i=0;i<items.length;i++){
       var f=items[i].file, p=items[i].path||f.name;
       if(SKIP.test(p)) continue;
-      if(/\.zip$/i.test(p)){ zips.push(f); continue; }
-      if(items.length===1&&/\.html?$/i.test(p)){ web=await readText(f); continue; }
-      if(!TEXT_EXT.test(p)||f.size>400000){ skipped++; continue; }
-      if(total+f.size>3000000){ skipped++; continue; }
-      var tx=await readText(f); if(tx==null){ skipped++; continue; }
-      total+=tx.length; got.push({path:p,text:tx});
+      if(/\.zip$/i.test(p)){
+        try{
+          var ents=await unzipJS(await readBytes(f)), tops={};
+          ents.forEach(function(e){ tops[e.path.split('/')[0]]=1; });
+          var strip=Object.keys(tops).length===1&&ents.every(function(e){ return e.path.indexOf('/')>0; });
+          ents.forEach(function(e){ var pp=strip?e.path.split('/').slice(1).join('/'):e.path; if(pp&&!SKIP.test(pp)) flat.push({path:pp,u8:e.bytes}); });
+        }catch(err){ notePy('zip을 열지 못했어요: '+err.message); skipped++; }
+        continue;
+      }
+      flat.push({path:p,file:f});
     }
-    if(web!=null){
-      t.mode='web'; t.code=web; if(!t.name||/^새 테스트/.test(t.name)) t.name=items[0].file.name.replace(/\.[^.]+$/,'');
-      save(); loadCur(); runWeb(); return;
+    var texts=[], imgs=[], total=t.files.reduce(function(a,x){ return a+x.text.length; },0);
+    for(var q=0;q<flat.length;q++){
+      var e=flat[q], size=e.u8?e.u8.length:e.file.size;
+      if(IMG_EXT.test(e.path)){ if(size>1500000){ skipped++; continue; } var du=e.u8?u8dataUrl(e.u8,e.path):await readDataUrl(e.file); if(du) imgs.push({path:e.path,dataUrl:du}); else skipped++; }
+      else if(TEXT_EXT.test(e.path)){
+        if(size>400000||total+size>3000000){ skipped++; continue; }
+        var tx=e.u8?u8text(e.u8):await readText(e.file); if(tx==null){ skipped++; continue; }
+        total+=size; texts.push({path:e.path,text:tx});
+      } else skipped++;
     }
-    if(t.mode!=='py'){ t.mode='py'; }
-    if(got.length) mergeFiles(got);
-    for(var z=0;z<zips.length;z++){
-      notePy('zip을 푸는 중 (파이썬 실행기를 먼저 불러와요)'); showPyStage();
-      try{
-        await ensurePy(); var bytes=await readBytes(zips[z]);
-        var m=await pyCall({t:'unpack',bytes:bytes});
-        mergeFiles(m.files||[]);
-      }catch(err){ notePy('zip을 열지 못했어요: '+err.message); }
+    var htmls=texts.filter(function(x){ return /\.html?$/i.test(x.path); });
+    var base=items[0]&&items[0].file?items[0].file.name.replace(/\.[^.]+$/,''):'';
+    if(htmls.length){
+      t.mode='web';
+      if(flat.length===1&&texts.length===1){ t.wfiles=null; t.entryHtml=''; t.code=texts[0].text; if(!t.name||/^새 테스트/.test(t.name)) t.name=base||texts[0].path.replace(/\.[^.]+$/,''); }
+      else { t.wfiles=texts.concat(imgs); t.entryHtml=''; t.code=''; if(!t.name||/^새 테스트/.test(t.name)) t.name=(items.length===1?base:'웹 프로젝트')||'웹 프로젝트'; }
+      t.store={}; R.pc=null; save(); loadCur(); runWeb(); return;
     }
-    if(skipped) notePy(skipped+'개 파일은 건너뛰었어요 (글자가 아닌 파일이거나 400KB 초과)');
-    if(!t.name||/^새 테스트/.test(t.name)){ var first=items[0]&&items[0].path; t.name=(first&&first.split('/')[0])||'파이썬 프로젝트'; }
+    if(!texts.length){ notePy('실행할 수 있는 파일이 없어요 (HTML 또는 파이썬 파일을 올리세요)'); if(t.mode==='web'){ R.events=[]; addEvent('warn','올린 파일에서 실행할 수 있는 HTML을 찾지 못했어요',0); renderAll(); } return; }
+    t.mode='py'; mergeFiles(texts);
+    if(skipped) notePy(skipped+'개 파일은 건너뛰었어요 (글자가 아닌 파일이거나 용량 초과)');
+    if(!t.name||/^새 테스트/.test(t.name)){ var first=items[0]&&items[0].path; t.name=(first&&first.split('/')[0])||base||'파이썬 프로젝트'; }
     save(); loadCur();
-    if(cur()===t&&t.mode==='py'&&t.files.length&&(got.length||zips.length)&&!R.pyBusy) runPy();
+    if(cur()===t&&t.files.length&&!R.pyBusy) runPy();
   }
+  $('webDir').addEventListener('change',function(){
+    var fs=[].slice.call($('webDir').files); $('webDir').value='';
+    takeFiles(fs.map(function(f){ var p=f.webkitRelativePath||f.name; var parts=p.split('/'); if(parts.length>1) parts.shift(); return {file:f,path:parts.join('/')}; }));
+  });
+  function renderProj(){
+    var t=cur(), box=$('projBox'), has=!!t.wfiles; $('codeWrap').hidden=has; box.hidden=!has; if(!has) return;
+    $('projCount').textContent='('+t.wfiles.length+'개)';
+    var host=$('projFiles'); host.textContent='';
+    t.wfiles.forEach(function(f){
+      var row=document.createElement('div'); row.className='frow';
+      var b=document.createElement('span'); b.className='pick'; b.style.cssText='flex:1;font-family:var(--font-mono);font-size:12.5px;padding:6px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; b.textContent=f.path+(f.dataUrl?'  (이미지)':''); b.title=f.path;
+      var d=document.createElement('button'); d.type='button'; d.className='small'; d.textContent='삭제'; d.setAttribute('aria-label',f.path+' 삭제');
+      d.addEventListener('click',function(){ t.wfiles=t.wfiles.filter(function(x){ return x!==f; }); if(!t.wfiles.length){ t.wfiles=null; t.entryHtml=''; } save(); renderProj(); runWeb(); renderSuggest(); });
+      row.appendChild(b); row.appendChild(d); host.appendChild(row);
+    });
+    var sel=$('projEntry'); sel.textContent='';
+    t.wfiles.filter(function(f){ return f.text!=null&&/\.html?$/i.test(f.path); }).forEach(function(f){ var o=document.createElement('option'); o.value=f.path; o.textContent=f.path; sel.appendChild(o); });
+    var en=webEntry(t); if(en) sel.value=en.path;
+  }
+  $('projEntry').addEventListener('change',function(){ cur().entryHtml=$('projEntry').value; save(); runWeb(); });
+  $('projClear').addEventListener('click',function(){ var t=cur(); t.wfiles=null; t.entryHtml=''; t.code=''; t.store={}; R.pc=null; save(); loadCur(); runWeb(); });
   $('file').addEventListener('change',function(){ var fs=[].slice.call($('file').files); $('file').value=''; takeFiles(fs.map(function(f){ return {file:f,path:f.name}; })); });
   $('pyFile').addEventListener('change',function(){ var fs=[].slice.call($('pyFile').files); $('pyFile').value=''; takeFiles(fs.map(function(f){ return {file:f,path:f.name}; })); });
   $('pyDir').addEventListener('change',function(){
@@ -988,7 +1140,7 @@ function workerMain(){
     } else items=[].slice.call(dt.files).map(function(f){ return {file:f,path:f.name}; });
     if(items.length) takeFiles(items);
   }
-  [['code'],['pyCode'],['drop']].forEach(function(a){
+  [['code'],['pyCode'],['drop'],['projBox']].forEach(function(a){
     var el=$(a[0]);
     ['dragenter','dragover'].forEach(function(n){ el.addEventListener(n,function(e){ e.preventDefault(); el.classList.add('drag'); }); });
     ['dragleave','drop'].forEach(function(n){ el.addEventListener(n,function(e){ e.preventDefault(); el.classList.remove('drag'); if(n==='drop'&&e.dataTransfer) dropped(e.dataTransfer); }); });
@@ -1087,7 +1239,7 @@ function workerMain(){
   function suggestions(t){
     var out=[];
     if(t.mode==='web'){
-      var c=t.code||''; if(!c.trim()) return out;
+      var c=webSrc(t); if(!c.trim()) return out;
       WEB_RULES.forEach(function(r){ if(r[0].test(c)) out.push({key:r[1],t:r[2],why:r[3]}); });
     } else {
       var src=t.files.map(function(f){ return f.text; }).join('\n'); if(!t.files.length) return out;
@@ -1101,7 +1253,7 @@ function workerMain(){
   function autoItems(t){
     var a=[];
     if(t.mode==='web'){
-      if(R.empty||!(t.code||'').trim()) return [{key:'a:none',st:'wait',t:'코드를 넣고 실행하면 자동 점검이 시작돼요',why:''}];
+      if(R.empty||!webSrc(t).trim()) return [{key:'a:none',st:'wait',t:'코드를 넣고 실행하면 자동 점검이 시작돼요',why:''}];
       var errs=R.events.filter(function(e){ return e.t==='error'||e.t==='console-error'; }); var errN=(R.counts.error||0)+(R.counts['console-error']||0);
       if(R.noSignal) a.push({key:'a:load',st:'bad',t:'화면에서 신호가 오지 않았어요',why:'3초 안에 실행 화면의 감시 신호를 받지 못했어요. 코드가 비었거나, 화면을 불러오지 못했거나, 감시 코드가 막혔을 수 있어요.'});
       else if(!R.ready) a.push({key:'a:load',st:'wait',t:'실행 화면을 불러오는 중',why:''});
@@ -1119,6 +1271,9 @@ function workerMain(){
       else if(!sm) a.push({key:'a:smoke',st:'wait',t:'자동 탐색을 아직 하지 않았어요',why:'오른쪽 위 "자동 탐색 실행"을 누르면 보이는 버튼, 입력칸, 링크를 무작위로 눌러 보고 오류가 나는지 확인해요.'});
       else if(!sm.seen) a.push({key:'a:smoke',st:'warn',t:'눌러 볼 수 있는 요소를 찾지 못했어요',why:'버튼이나 입력칸이 없는 화면이거나, 클릭이 아닌 방식(키보드·드래그)으로만 조작하는 화면일 수 있어요.'});
       else a.push({key:'a:smoke',st:sm.errors?'bad':'ok',t:'자동 탐색 '+sm.steps+'단계 · 요소 '+sm.seen+'개 · 오류 '+sm.errors+'건',why:'무작위로 눌러 보는 방식이라 모든 경로를 보장하지 않아요 (시드 '+sm.seed+'). 키보드 입력 '+sm.keys+'회'+(sm.alerts?', 알림창 '+sm.alerts+'회 자동 처리':'')+'. 다시 실행하면 다른 순서로 눌러 봐요.'});
+      if(R.pcRunning) a.push({key:'a:pc',st:'wait',t:'저장 유지 확인 중…',why:'앱을 눌러 본 뒤 새로고침해서 화면을 비교해요.'});
+      else if(R.pc) a.push({key:'a:pc',st:R.pc.st,t:R.pc.t,why:R.pc.why});
+      else a.push({key:'a:pc',st:'wait',t:'저장 유지는 아직 확인하지 않았어요',why:'위 "저장 유지 확인"을 누르면 앱을 눌러 본 뒤 새로고침해서 데이터가 남는지 봐요.'});
       if(sm&&sm.seen){
         var dead=sm.controls.filter(function(c){ return c.n>=1&&c.react===0&&!/^(input|textarea|select)/.test(c.label); });
         if(dead.length) a.push({key:'a:dead',st:'warn',t:'눌러도 화면이 안 바뀐 요소 '+dead.length+'개',why:dead.slice(0,6).map(function(c){ return c.label; }).join(' · ')+(dead.length>6?' 외':'')+' — 화면 대신 저장이나 계산만 하는 것일 수도 있어서 직접 확인이 필요해요.'});
@@ -1247,7 +1402,7 @@ function workerMain(){
     var t=cur(), py=t.mode==='py';
     $('modeWeb').setAttribute('aria-pressed',py?'false':'true'); $('modePy').setAttribute('aria-pressed',py?'true':'false');
     $('webIn').hidden=py; $('pyIn').hidden=!py;
-    $('webStage').hidden=py; $('pyStage').hidden=!py; $('webTools').hidden=py; $('pyTools').hidden=!py; $('sizeNote').hidden=py;
+    $('webStage').hidden=py; $('storeBar').hidden=py; $('pcBtn').hidden=py; $('pyStage').hidden=!py; $('webTools').hidden=py; $('pyTools').hidden=!py; $('sizeNote').hidden=py;
     $('limits').textContent=py?'파이썬은 이 브라우저 안에서 실행돼요 (Pyodide). 처음 한 번 실행기를 내려받느라 수십 초 걸릴 수 있고, 인터넷 연결이 필요해요. 네트워크 접속, 일부 운영체제 기능, 설치되지 않은 패키지는 동작하지 않아요. 출처를 모르는 코드는 넣지 마세요.':'코드는 이 브라우저 안의 격리된 화면에서만 실행됩니다. 출처를 모르는 코드는 넣지 마세요. 서버 연결, API 키, 여러 파일로 나뉜 웹 프로젝트는 확인할 수 없어요.';
     $('sizeNote').hidden=py;
   }
@@ -1256,11 +1411,11 @@ function workerMain(){
     var t=cur();
     $('tname').value=t.name; $('code').value=t.code||''; $('memo').value=t.memo||''; $('args').value=t.args||''; $('stdin').value=t.stdin||'';
     $('handoff').hidden=true; $('copyMsg').textContent='';
-    renderSel(); showMode(); renderFiles(); showSel(); renderKind(); renderApi(); renderExtra(); renderSuggest(); renderCustom(); renderAuto(); renderLog(); renderTally();
+    renderSel(); showMode(); renderProj(); renderStore(); renderFiles(); showSel(); renderKind(); renderApi(); renderExtra(); renderSuggest(); renderCustom(); renderAuto(); renderLog(); renderTally();
     if(t.mode==='web') layoutStage();
   }
   function renderAll(){ renderLog(); renderAuto(); renderTally(); }
-  function reset(){ R.events=[]; R.counts={}; R.ready=false; R.loaded=false; R.noSignal=false; R.stat=null; R.smoke=null; R.smokeRunning=false; R.py=null; R.empty=false; R.started=0; pyLines=[]; renderPyOut(); $('pyTests').textContent=''; $('pyExtra').textContent=''; pyStatus(''); $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 실행'; clearTimeout(sigTimer); }
+  function reset(){ R.events=[]; R.counts={}; R.ready=false; R.loaded=false; R.noSignal=false; R.stat=null; R.smoke=null; R.smokeRunning=false; R.py=null; R.pc=null; R.pcRunning=false; R.empty=false; R.started=0; pyLines=[]; renderPyOut(); $('pyTests').textContent=''; $('pyExtra').textContent=''; pyStatus(''); $('smokeBtn').disabled=false; $('smokeBtn').textContent='자동 탐색 실행'; clearTimeout(sigTimer); }
   function switchTo(id){ if(pw&&R.pyBusy) stopPy(); S.cur=id; save(); armed=false; $('delTest').textContent='삭제'; $('delTest').classList.remove('warnbtn'); reset(); loadCur(); if(cur().mode==='web') runWeb(); }
   $('testSel').addEventListener('change',function(){ switchTo($('testSel').value); });
   $('newTest').addEventListener('click',function(){ var t=mk('새 테스트',cur().mode); S.tests.push(t); switchTo(t.id); (t.mode==='web'?$('code'):$('newFile')).focus(); });
@@ -1276,7 +1431,7 @@ function workerMain(){
   $('code').addEventListener('input',function(){ cur().code=$('code').value; save(); renderSuggest(); renderTally(); });
   $('modeWeb').addEventListener('click',function(){ var t=cur(); if(t.mode==='web') return; t.mode='web'; save(); reset(); loadCur(); });
   $('modePy').addEventListener('click',function(){ var t=cur(); if(t.mode==='py') return; t.mode='py'; save(); reset(); loadCur(); });
-  $('run').addEventListener('click',runWeb);
+  $('run').addEventListener('click',function(){ R.pc=null; runWeb(); });
   $('pyRun').addEventListener('click',runPy);
   $('sample').addEventListener('click',function(){ var t=mk('예시: 할 일 목록','web'); t.code=SAMPLE_WEB; S.tests.push(t); switchTo(t.id); });
   function storeText(){ $('storeNote').textContent=S.persist?'넣은 코드, 파일, 표시, 메모가 이 기기의 이 브라우저에 저장됩니다. 다른 기기에서는 보이지 않고, 브라우저 데이터를 지우면 사라집니다.':'지금은 저장하지 않아요. 페이지를 닫거나 새로고침하면 넣은 코드와 파일, 표시, 메모가 모두 사라져요. 필요하면 위 체크를 켜세요.'; }
